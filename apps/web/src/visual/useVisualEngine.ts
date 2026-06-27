@@ -8,6 +8,7 @@ import {
 	createRenderer,
 	createShelfManagerWithThree,
 	createShelfPointerRaycastFocus,
+	createShelfPointerRaycastHitGetter,
 	createShelfStep,
 	createStageLyricsLifecycle,
 	RenderStepSlot,
@@ -25,6 +26,7 @@ import {
 	type ShelfItem,
 	type StageLyricsLifecycle,
 } from "@mineradio/visual-engine";
+import { attachShelfPointerInteractionWiring } from "./shelf-pointer-interactions";
 import {
 	attachShelfFocusZonePointerWiring,
 	isQueueFocusActive,
@@ -43,6 +45,7 @@ export interface VisualEngineRefs {
 	splashActiveRef: RefObject<boolean>;
 	shelfCameraModeRef?: RefObject<string>;
 	wallpaperSafeRef?: RefObject<boolean>;
+	onShelfPlayQueueIndexRef?: RefObject<((index: number) => void) | undefined>;
 	lifecycleRef: RefObject<StageLyricsLifecycle | null>;
 	coverResolution: number;
 	fxDefaults?: Partial<FxState>;
@@ -65,6 +68,7 @@ interface MountedHandles {
 	offAudio: () => void;
 	offHomeAudio: () => void;
 	offShelfFocus: () => void;
+	offShelfPointerInteractions: () => void;
 }
 
 function prefersReducedMotion(): boolean {
@@ -220,6 +224,10 @@ function disposeHandles(handles: MountedHandles | null): void {
 	}
 	try {
 		handles.offShelfFocus();
+	} catch {
+	}
+	try {
+		handles.offShelfPointerInteractions();
 	} catch {
 	}
 	try {
@@ -394,6 +402,10 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				camera: renderer.camera,
 				shelfManager,
 			});
+			const getShelfPointerHit = await createShelfPointerRaycastHitGetter({
+				camera: renderer.camera,
+				shelfManager,
+			});
 			if (cancelled || disposedRef.current) {
 				offAudio();
 				offLyrics();
@@ -427,6 +439,18 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				},
 				getSideShelfFocusHit,
 			});
+			const offShelfPointerInteractions = attachShelfPointerInteractionWiring({
+				target: window,
+				cinema,
+				shelfManager,
+				getHit: getShelfPointerHit,
+				getSplashActive: () => refs.splashActiveRef.current,
+				getPortrait: () => window.innerHeight > window.innerWidth,
+				getWallpaperSafe: () => refs.wallpaperSafeRef?.current ?? isWallpaperSafeShelfPreset(refs.fxDefaults?.preset),
+				getViewportWidth: () => window.innerWidth || host.clientWidth || 0,
+				getViewportHeight: () => window.innerHeight || host.clientHeight || 0,
+				onShelfPlayQueueIndex: (index) => refs.onShelfPlayQueueIndexRef?.current?.(index),
+			});
 			handles = {
 				renderer,
 				audioEngine,
@@ -444,6 +468,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				offAudio,
 				offHomeAudio,
 				offShelfFocus,
+				offShelfPointerInteractions,
 			};
 			renderLoop.start();
 		})();
@@ -455,5 +480,5 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			handles = null;
 			refs.lifecycleRef.current = null;
 		};
-	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.shelfCameraModeRef, refs.wallpaperSafeRef, refs.lifecycleRef, refs.coverResolution]);
+	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.shelfCameraModeRef, refs.wallpaperSafeRef, refs.onShelfPlayQueueIndexRef, refs.lifecycleRef, refs.coverResolution]);
 }

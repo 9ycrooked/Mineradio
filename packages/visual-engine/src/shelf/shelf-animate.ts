@@ -67,6 +67,9 @@ export interface ShelfManager {
 	getMode(): ShelfMode;
 	setSelectedIdx(idx: number): void;
 	getSelectedIdx(): number;
+	clearSelected(): void;
+	getCenterIdx(): number;
+	scrollBy(delta: number): void;
 	setShelfPane(pane: ShelfPane, nowSeconds?: number): void;
 	getShelfPane(): ShelfPane;
 	setShelfVisibility(v: number): void;
@@ -168,6 +171,22 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 		},
 		getSelectedIdx() {
 			return state.selectedIdx;
+		},
+		clearSelected() {
+			state.selectedIdx = -1;
+		},
+		getCenterIdx() {
+			return clampInt(Math.round(state.centerSmooth), 0, Math.max(0, data.length - 1));
+		},
+		scrollBy(delta) {
+			if (data.length <= 0) {
+				state.centerTarget = 0;
+				state.centerIdx = 0;
+				return;
+			}
+			const max = data.length - 1;
+			const next = clampInt(Math.round(state.centerTarget + delta), 0, max);
+			state.centerTarget = next;
 		},
 		setShelfPane(pane, nowSeconds) {
 			if (pane === state.shelfPane) return;

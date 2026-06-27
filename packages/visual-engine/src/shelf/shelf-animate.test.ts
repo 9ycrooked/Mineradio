@@ -121,6 +121,30 @@ test("ShelfManager.setSelectedIdx persists into state", () => {
 	expect(m.getState().selectedIdx).toBe(3);
 });
 
+test("ShelfManager.clearSelected resets selectedIdx to baseline empty selection", () => {
+	const m = createShelfManager({});
+	m.setSelectedIdx(3);
+	m.clearSelected();
+	expect(m.getSelectedIdx()).toBe(-1);
+	expect(m.getState().selectedIdx).toBe(-1);
+});
+
+test("ShelfManager.scrollBy clamps centerTarget to shelf data and exposes rounded center", () => {
+	const m = createShelfManager({});
+	m.setData(Array.from({ length: 4 }, (_, i) => ({ type: "queue", title: `Q${i}` })));
+	m.scrollBy(2);
+	expect(m.getState().centerTarget).toBe(2);
+	expect(m.getCenterIdx()).toBe(0);
+
+	m.getState().centerSmooth = 1.6;
+	expect(m.getCenterIdx()).toBe(2);
+
+	m.scrollBy(99);
+	expect(m.getState().centerTarget).toBe(3);
+	m.scrollBy(-99);
+	expect(m.getState().centerTarget).toBe(0);
+});
+
 test("ShelfManager.setShelfPane tracks pane memory and switches shelfPane", () => {
 	const m = createShelfManager({});
 	m.getState().centerTarget = 2;

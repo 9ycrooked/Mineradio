@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createShelfPointerRaycastFocus } from "./shelf-raycast-focus";
+import { createShelfPointerRaycastFocus, createShelfPointerRaycastHitGetter } from "./shelf-raycast-focus";
 
 test("createShelfPointerRaycastFocus maps pointer coordinates to NDC and raycasts side shelf cards", async () => {
 	const vectorValues: number[][] = [];
@@ -45,6 +45,41 @@ test("createShelfPointerRaycastFocus maps pointer coordinates to NDC and raycast
 	expect(vectorValues).toEqual([[0, 0.5]]);
 	expect(raycasterCalls).toEqual([[0, 0.5, camera]]);
 	expect(raycasted.length).toBe(1);
+});
+
+test("createShelfPointerRaycastHitGetter returns the card hit so hover and click can reuse raycast results", async () => {
+	const vectorValues: number[][] = [];
+	class FakeVector2 {
+		x = 0;
+		y = 0;
+		set(x: number, y: number) {
+			this.x = x;
+			this.y = y;
+			vectorValues.push([x, y]);
+		}
+	}
+	class FakeRaycaster {
+		setFromCamera() {}
+	}
+	const hit = { index: 3 };
+	const getHit = await createShelfPointerRaycastHitGetter({
+		camera: {} as never,
+		three: {
+			Raycaster: FakeRaycaster,
+			Vector2: FakeVector2,
+		} as never,
+		shelfManager: {
+			raycastCards: () => hit as never,
+		},
+	});
+
+	expect(getHit({
+		clientX: 1200,
+		clientY: 900,
+		viewportWidth: 1200,
+		viewportHeight: 900,
+	})).toBe(hit);
+	expect(vectorValues).toEqual([[1, -1]]);
 });
 
 test("createShelfPointerRaycastFocus stays false outside side mode or without viewport size", async () => {

@@ -22,6 +22,7 @@ export interface VisualEngineHostProps {
 	coverResolution?: number;
 	fxDefaults?: Partial<FxState>;
 	splashActive?: boolean;
+	onShelfPlayQueueIndex?: (index: number) => void;
 }
 
 function mapLyricPayload(payload: LyricPayload | null): VisualLyricLine[] {
@@ -42,6 +43,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const splashActiveRef = useRef<boolean>(props.splashActive ?? false);
 	const shelfCameraModeRef = useRef<string>(props.fxDefaults?.shelfCameraMode ?? "static");
 	const wallpaperSafeRef = useRef<boolean>(isWallpaperSafeShelfPreset(props.fxDefaults?.preset));
+	const onShelfPlayQueueIndexRef = useRef<((index: number) => void) | undefined>(props.onShelfPlayQueueIndex);
 	const lifecycleRef = useRef<StageLyricsLifecycle | null>(null);
 
 	positionRef.current = props.positionMs;
@@ -49,6 +51,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	splashActiveRef.current = props.splashActive ?? false;
 	shelfCameraModeRef.current = props.fxDefaults?.shelfCameraMode ?? "static";
 	wallpaperSafeRef.current = isWallpaperSafeShelfPreset(props.fxDefaults?.preset);
+	onShelfPlayQueueIndexRef.current = props.onShelfPlayQueueIndex;
 
 	const nextShelfItems = useMemo(
 		() => mapQueueToShelfItems(props.queue ?? [], props.currentTrack ?? null),
@@ -82,6 +85,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 		splashActiveRef,
 		shelfCameraModeRef,
 		wallpaperSafeRef,
+		onShelfPlayQueueIndexRef,
 		lifecycleRef,
 		coverResolution: props.coverResolution ?? 1.55,
 		fxDefaults: props.fxDefaults,

@@ -260,6 +260,7 @@ export function App(): ReactElement {
 				currentTrack={currentTrack}
 				coverResolution={1.55}
 				splashActive={splashActive}
+				onShelfPlayQueueIndex={(index) => usePlaybackStore.getState().playAt(index)}
 			/>
 			<main className="shell">
 			<section className="status-panel">
