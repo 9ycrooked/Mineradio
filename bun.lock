@@ -54,6 +54,9 @@
     "packages/visual-engine": {
       "name": "@mineradio/visual-engine",
       "version": "0.1.0",
+      "dependencies": {
+        "gsap": "^3.15.0",
+      },
       "devDependencies": {
         "typescript": "^5.0.0",
       },
