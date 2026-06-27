@@ -22,6 +22,8 @@
 | 旧 Electron patch JSON 系统 | removed-by-decision | Tauri updater 替代旧 patch 系统，二开项目不兼容旧更新通道 | 无 | 不进入 Tauri 主线 |
 | 旧用户数据自动迁移 | removed-by-decision | 本项目为二开项目，不承诺读取旧安装用户数据 | 无 | 不进入 Tauri 主线 |
 | QQ 独立 sidecar | deferred | 第一版先用一个 Bun API sidecar 内部 provider adapter | QQ provider 复杂到影响主 sidecar 稳定性时拆分 | 视实现复杂度决定 |
+| Tauri 发布 logo / 最终品牌名 | deferred | 开发期只需 Windows RC 资源图标；最终公开发布 logo/品牌名需用户决策 | 用户确认 logo 资产和品牌名后替换 `apps/desktop/src-tauri/icons/` 并更新 productName/identifier | 补齐 |
+| Tauri dev 期占位图标 | active | `apps/desktop/src-tauri/icons/icon.ico` 当前临时复用 Electron baseline `build/icon.ico`，仅为通过 `cargo test`/`tauri build` 的 Windows RC 资源要求 | 最终 logo 决策后替换 | 见上一行 |
 
 ## 管理规则
 

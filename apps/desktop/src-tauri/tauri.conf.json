@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mineradio Tauri Rewrite",
+  "version": "0.1.0",
+  "identifier": "com.mineradio.fork.tauri",
+  "build": {
+    "beforeDevCommand": "bun run --filter ./apps/web dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "bun run --filter ./apps/web build",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Mineradio Tauri Rewrite",
+        "width": 1280,
+        "height": 720,
+        "minWidth": 960,
+        "minHeight": 540
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Music",
+    "shortDescription": "Mineradio Tauri rewrite shell",
+    "longDescription": "A GPL-3.0 Tauri rewrite shell for Mineradio."
+  }
+}

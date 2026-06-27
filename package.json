@@ -6,10 +6,19 @@
   "author": "Mineradio",
   "main": "desktop/main.js",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "sidecars/*"
+  ],
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "build:win:dir": "electron-builder --win dir",
+    "tauri:dev": "bun run --filter ./apps/desktop tauri dev",
+    "tauri:build": "bun run --filter ./apps/desktop tauri build",
+    "web:build": "bun run --filter ./apps/web build",
+    "sidecar:dev": "bun run --filter ./sidecars/api dev"
   },
   "build": {
     "appId": "com.mineradio.desktop",

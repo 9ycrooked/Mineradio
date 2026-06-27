@@ -45,3 +45,11 @@ tmp/
 *.png.tmp
 verification/
 screenshots/
+
+# Tauri / Bun workspace outputs
+apps/*/dist/
+apps/*/node_modules/
+packages/*/dist/
+sidecars/*/dist/
+target/
+.worktrees/
