@@ -37,7 +37,7 @@ function withEnv(key: string, value: string | undefined, run: () => Promise<void
 function noopDeps(overrides: Partial<NeteaseHanaDeps>): NeteaseHanaDeps {
   const call = async () => ({ body: {} });
   return {
-    search: call,
+    cloudsearch: call,
     songDetail: call,
     songUrlV1: call,
     lyric: call,
@@ -51,10 +51,10 @@ function noopDeps(overrides: Partial<NeteaseHanaDeps>): NeteaseHanaDeps {
   };
 }
 
-test("search calls hana search with keywords/limit/type and maps result to Track[]", async () => {
+test("search calls hana cloudsearch with keywords/limit/type and maps result to Track[]", async () => {
   let lastQuery: Record<string, unknown> = {};
   const deps = noopDeps({
-    search: async (q) => {
+    cloudsearch: async (q) => {
       lastQuery = q;
       return {
         body: {

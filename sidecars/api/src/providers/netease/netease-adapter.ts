@@ -29,7 +29,7 @@ export interface NeteaseHanaCall {
 }
 
 export interface NeteaseHanaDeps {
-  search: NeteaseHanaCall;
+  cloudsearch: NeteaseHanaCall;
   songDetail: NeteaseHanaCall;
   songUrlV1: NeteaseHanaCall;
   lyric: NeteaseHanaCall;
@@ -46,7 +46,7 @@ function cast(fn: unknown): NeteaseHanaCall {
 }
 
 const defaultDeps: NeteaseHanaDeps = {
-  search: cast(hanaClient.search),
+  cloudsearch: cast(hanaClient.cloudsearch),
   songDetail: cast(hanaClient.songDetail),
   songUrlV1: cast(hanaClient.songUrlV1),
   lyric: cast(hanaClient.lyric),
@@ -87,7 +87,7 @@ export function createNeteaseAdapter(
     id: "netease",
     async search({ keyword, limit }): Promise<Track[]> {
       const cfg = cfgOf(deps);
-      const resp = await deps.search({ keywords: keyword, limit, type: 1 }, cfg);
+      const resp = await deps.cloudsearch({ keywords: keyword, limit, type: 1 }, cfg);
       const body = asObj(resp.body);
       const result = body ? asObj(body.result) : null;
       const songsRaw = result && Array.isArray(result.songs) ? result.songs : [];

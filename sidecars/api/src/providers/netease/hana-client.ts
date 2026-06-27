@@ -1,5 +1,5 @@
 import {
-  search,
+  cloudsearch,
   songDetail,
   songUrlV1,
   lyric,
@@ -21,7 +21,7 @@ export function getConfig(): NeteaseConfig {
 }
 
 export const hanaClient = {
-  search,
+  cloudsearch,
   songDetail,
   songUrlV1,
   lyric,
