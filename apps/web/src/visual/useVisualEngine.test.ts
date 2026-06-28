@@ -38,3 +38,19 @@ test("resolveHomeVisualPreset applies baseline idle wallpaper preset and restore
 	const restoredToSamePreset = resolveHomeVisualPreset(false, 5, 0, 5);
 	expect(restoredToSamePreset).toEqual({ preset: 5, previousPreset: null, changed: false });
 });
+
+test("resolveHomeVisualPreset restores playback visual preset on playback entry when no home preview preset is cached", () => {
+	const restored = resolveHomeVisualPreset(false, 5, 0, null, {
+		playbackActive: true,
+		playbackPreset: 2,
+	});
+	expect(restored).toEqual({ preset: 2, previousPreset: null, changed: true });
+});
+
+test("resolveHomeVisualPreset keeps cached pre-home preset ahead of playback preset", () => {
+	const restored = resolveHomeVisualPreset(false, 5, 0, 4, {
+		playbackActive: true,
+		playbackPreset: 2,
+	});
+	expect(restored).toEqual({ preset: 4, previousPreset: null, changed: true });
+});

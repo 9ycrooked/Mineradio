@@ -238,6 +238,7 @@ export function resolveHomeVisualPreset(
 	currentPreset: number,
 	defaultPreset: number,
 	previousPreset: number | null,
+	opts: { playbackActive?: boolean; playbackPreset?: number | null } = {},
 ): { preset: number; previousPreset: number | null; changed: boolean } {
 	if (homeActive) {
 		const nextPreviousPreset = previousPreset ?? currentPreset;
@@ -247,7 +248,11 @@ export function resolveHomeVisualPreset(
 			changed: currentPreset !== HOME_WALLPAPER_PRESET || previousPreset === null,
 		};
 	}
-	const target = previousPreset ?? defaultPreset;
+	const target = previousPreset ?? (
+		opts.playbackActive && typeof opts.playbackPreset === "number"
+			? opts.playbackPreset
+			: defaultPreset
+	);
 	return {
 		preset: target,
 		previousPreset: null,
@@ -468,6 +473,10 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 					homeVisual.getPreset(),
 					refs.fxDefaults?.preset ?? 0,
 					homeVisualPreviousPreset,
+					{
+						playbackActive: refs.isPlayingRef.current,
+						playbackPreset: refs.fxDefaults?.preset ?? 0,
+					},
 				);
 				if (preset.changed) {
 					homeVisual.setPreset(preset.preset, {
