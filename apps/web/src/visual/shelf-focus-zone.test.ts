@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	attachShelfFocusZonePointerWiring,
+	createSecondaryPlaylistEdgeGuard,
 	isWallpaperSafeShelfPreset,
 	isQueueFocusActive,
 	resolveShelfFocusZone,
@@ -262,6 +263,61 @@ test("isQueueFocusActive preserves peek panel focus up to the baseline right pad
 		viewportWidth: 1200,
 		viewportHeight: 900,
 	}, panel)).toBe(false);
+});
+
+test("isQueueFocusActive applies secondary-left-display seam dwell before queue focus", () => {
+	let nowMs = 1000;
+	const guard = createSecondaryPlaylistEdgeGuard({ nowMs: () => nowMs });
+	const basePointer = { clientX: 36, clientY: 300, viewportWidth: 1200, viewportHeight: 900 };
+	const opts = {
+		secondaryLeftDisplaySeamGuardActive: true,
+		secondaryEdgeGuard: guard,
+	};
+
+	expect(isQueueFocusActive({ ...basePointer, clientX: 14 }, null, opts)).toBe(false);
+	expect(isQueueFocusActive(basePointer, null, opts)).toBe(false);
+	nowMs = 1219;
+	expect(isQueueFocusActive(basePointer, null, opts)).toBe(false);
+	nowMs = 1220;
+	expect(isQueueFocusActive(basePointer, null, opts)).toBe(true);
+	expect(isQueueFocusActive({ ...basePointer, clientX: 95 }, null, opts)).toBe(true);
+	expect(isQueueFocusActive({ ...basePointer, clientX: 96 }, null, opts)).toBe(false);
+
+	nowMs = 1500;
+	expect(isQueueFocusActive({ ...basePointer, clientY: 100 }, null, opts)).toBe(false);
+	expect(isQueueFocusActive(basePointer, null, opts)).toBe(false);
+});
+
+test("isQueueFocusActive uses secondary seam close and narrower peek padding", () => {
+	const guard = createSecondaryPlaylistEdgeGuard({ nowMs: () => 2000 });
+	const panel = {
+		active: true,
+		peek: true,
+		rect: { left: 80, right: 320, top: 140, bottom: 720 },
+	};
+	const opts = {
+		secondaryLeftDisplaySeamGuardActive: true,
+		secondaryEdgeGuard: guard,
+	};
+
+	expect(isQueueFocusActive({
+		clientX: 20,
+		clientY: 300,
+		viewportWidth: 1200,
+		viewportHeight: 900,
+	}, panel, opts)).toBe(false);
+	expect(isQueueFocusActive({
+		clientX: 347,
+		clientY: 300,
+		viewportWidth: 1200,
+		viewportHeight: 900,
+	}, panel, opts)).toBe(true);
+	expect(isQueueFocusActive({
+		clientX: 348,
+		clientY: 300,
+		viewportWidth: 1200,
+		viewportHeight: 900,
+	}, panel, opts)).toBe(false);
 });
 
 test("attachShelfFocusZonePointerWiring lets injected queue focus win immediately", () => {

@@ -180,6 +180,10 @@ export function applyDesktopWindowShellState(state: WindowState): void {
 	document.body.classList.toggle("desktop-fullscreen", isDesktopWindowFullscreen(state));
 }
 
+export function shouldUseSecondaryLeftDisplaySeamGuard(state: WindowState | null): boolean {
+	return state?.isPrimaryDisplay === false && state.hasDisplayOnLeft;
+}
+
 export type AppProps = {
 	SplashComponent?: (props: SplashHostProps) => ReactElement | null;
 	VisualComponent?: typeof VisualEngineHost;
@@ -213,6 +217,7 @@ export function App({
 	const [updateModalOpen, setUpdateModalOpen] = useState(false);
 	const [collectTarget, setCollectTarget] = useState<Track | null>(null);
 	const [collectBusyPlaylistId, setCollectBusyPlaylistId] = useState<string | null>(null);
+	const [desktopWindowState, setDesktopWindowState] = useState<WindowState | null>(null);
 
 	const currentTrack = usePlaybackStore((s) => s.currentTrack);
 	const queue = usePlaybackStore((s) => s.queue);
@@ -811,10 +816,16 @@ export function App({
 		let disposed = false;
 		let unlisten: (() => void) | null = null;
 		void getWindowState().then((state) => {
-			if (!disposed) applyDesktopWindowShellState(state);
+			if (!disposed) {
+				setDesktopWindowState(state);
+				applyDesktopWindowShellState(state);
+			}
 		});
 		void listenWindowState((state) => {
-			if (!disposed) applyDesktopWindowShellState(state);
+			if (!disposed) {
+				setDesktopWindowState(state);
+				applyDesktopWindowShellState(state);
+			}
 		}).then((dispose) => {
 			if (disposed) dispose();
 			else unlisten = dispose;
@@ -1138,6 +1149,7 @@ export function App({
 				}}
 				splashActive={splashActive}
 				homeActive={emptyHomeActive}
+				secondaryLeftDisplaySeamGuardActive={shouldUseSecondaryLeftDisplaySeamGuard(desktopWindowState)}
 				onShelfModeChange={updateShelfMode}
 				onShelfPlayQueueIndex={(index) => usePlaybackStore.getState().playAt(index)}
 				onShelfDetailRowClick={(payload) => {

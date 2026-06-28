@@ -54,6 +54,20 @@ export interface QueueFocusPanelInfo {
 	rect: QueueFocusPanelRect;
 }
 
+export interface SecondaryPlaylistEdgeGuard {
+	isTriggerPoint(pointer: ShelfFocusPointerInfo): boolean;
+	reset(): void;
+}
+
+export interface SecondaryPlaylistEdgeGuardOptions {
+	nowMs?: () => number;
+}
+
+export interface QueueFocusOptions {
+	secondaryLeftDisplaySeamGuardActive?: boolean;
+	secondaryEdgeGuard?: SecondaryPlaylistEdgeGuard;
+}
+
 export interface ShelfFocusPointerWiringOptions {
 	target: ShelfFocusPointerTarget;
 	cinema: Pick<CinemaCamera, "setFocusZone">;
@@ -67,6 +81,11 @@ export interface ShelfFocusPointerWiringOptions {
 	getQueueFocusActive?: (pointer: ShelfFocusPointerInfo) => boolean;
 	getSideShelfFocusHit?: (pointer: ShelfFocusPointerInfo) => boolean;
 }
+
+export const SECONDARY_PLAYLIST_EDGE_MIN_X = 36;
+export const SECONDARY_PLAYLIST_EDGE_MAX_X = 96;
+export const SECONDARY_PLAYLIST_EDGE_DWELL_MS = 220;
+export const SECONDARY_PLAYLIST_SEAM_CLOSE_X = 28;
 
 export function resolveShelfFocusZone(input: ShelfFocusZoneInput): ResolvedShelfFocusZone {
 	const base = {
@@ -104,11 +123,52 @@ export function isWallpaperSafeShelfPreset(preset: unknown): boolean {
 	return Number(preset) === 5;
 }
 
-export function isQueueFocusActive(pointer: ShelfFocusPointerInfo, panel?: QueueFocusPanelInfo | null): boolean {
+export function createSecondaryPlaylistEdgeGuard(options: SecondaryPlaylistEdgeGuardOptions = {}): SecondaryPlaylistEdgeGuard {
+	const nowMs = options.nowMs ?? (() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
+	let enteredAt = 0;
+
+	const reset = () => {
+		enteredAt = 0;
+	};
+
+	return {
+		isTriggerPoint(pointer) {
+			const ex = pointer.clientX;
+			const ey = pointer.clientY;
+			const h = pointer.viewportHeight;
+			const inVerticalBand = ey > 132 && ey < h - 132;
+			if (!inVerticalBand) {
+				reset();
+				return false;
+			}
+			const inSafeBand =
+				ex >= SECONDARY_PLAYLIST_EDGE_MIN_X &&
+				ex < SECONDARY_PLAYLIST_EDGE_MAX_X;
+			if (!inSafeBand) {
+				reset();
+				return false;
+			}
+			const now = nowMs();
+			if (!enteredAt) enteredAt = now;
+			return now - enteredAt >= SECONDARY_PLAYLIST_EDGE_DWELL_MS;
+		},
+		reset,
+	};
+}
+
+export function isQueueFocusActive(
+	pointer: ShelfFocusPointerInfo,
+	panel?: QueueFocusPanelInfo | null,
+	options: QueueFocusOptions = {},
+): boolean {
 	const ex = pointer.clientX;
 	const ey = pointer.clientY;
 	const h = pointer.viewportHeight;
-	const inTrigger = ey > 132 && ey < h - 132 && ex >= 14 && ex < 78;
+	const seamGuardActive = options.secondaryLeftDisplaySeamGuardActive === true;
+	const edgeGuard = options.secondaryEdgeGuard;
+	const inTrigger = seamGuardActive
+		? edgeGuard?.isTriggerPoint(pointer) === true
+		: ey > 132 && ey < h - 132 && ex >= 14 && ex < 78;
 	const rect = panel?.rect;
 	const inPanel = !!(
 		panel?.active &&
@@ -118,8 +178,9 @@ export function isQueueFocusActive(pointer: ShelfFocusPointerInfo, panel?: Queue
 		ey >= rect.top - 22 &&
 		ey <= rect.bottom + 22
 	);
-	// 次屏左边缘 seam/dwell 仍待后续视觉录制切片补齐；此处保持主屏 baseline 几何。
-	const peekFocus = !!(panel?.peek && rect && ex < rect.right + 52);
+	if (seamGuardActive && ex < SECONDARY_PLAYLIST_SEAM_CLOSE_X) return false;
+	const peekPadding = seamGuardActive ? 28 : 52;
+	const peekFocus = !!(panel?.peek && rect && ex < rect.right + peekPadding);
 	return inTrigger || inPanel || peekFocus;
 }
 

@@ -8,6 +8,7 @@ import {
 	applyDesktopWindowShellState,
 	deriveSidecarRecoveryNoticeState,
 	isHomeBlankDismissElement,
+	shouldUseSecondaryLeftDisplaySeamGuard,
 	shouldShowEmptyHome,
 } from "./App";
 import type { SplashHostProps } from "../visual/SplashHost";
@@ -163,6 +164,37 @@ test("applyDesktopWindowShellState mirrors baseline desktop shell classes", asyn
 
 	expect(document.body.classList.contains("desktop-maximized")).toBe(false);
 	expect(document.body.classList.contains("desktop-fullscreen")).toBe(false);
+});
+
+test("shouldUseSecondaryLeftDisplaySeamGuard mirrors baseline secondary display predicate", () => {
+	const base = {
+		isMaximized: false,
+		isNativeFullScreen: false,
+		isHtmlFullScreen: false,
+		isWindowFullScreen: false,
+		isFullScreen: false,
+		isMinimized: false,
+		isVisible: true,
+		isFocused: true,
+		hasDisplayOnRight: false,
+		displayBounds: null,
+	};
+	expect(shouldUseSecondaryLeftDisplaySeamGuard(null)).toBe(false);
+	expect(shouldUseSecondaryLeftDisplaySeamGuard({
+		...base,
+		isPrimaryDisplay: false,
+		hasDisplayOnLeft: true,
+	})).toBe(true);
+	expect(shouldUseSecondaryLeftDisplaySeamGuard({
+		...base,
+		isPrimaryDisplay: true,
+		hasDisplayOnLeft: true,
+	})).toBe(false);
+	expect(shouldUseSecondaryLeftDisplaySeamGuard({
+		...base,
+		isPrimaryDisplay: false,
+		hasDisplayOnLeft: false,
+	})).toBe(false);
 });
 
 test("App custom lyric modal saves text and applies custom lyrics to current track", async () => {

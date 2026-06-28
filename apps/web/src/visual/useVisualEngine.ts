@@ -40,6 +40,7 @@ import type { ShelfDetailRowClickPayload } from "./shelf-pointer-interactions";
 import type { ShelfDetailContentListWriter } from "./shelf-detail-data";
 import {
 	attachShelfFocusZonePointerWiring,
+	createSecondaryPlaylistEdgeGuard,
 	isQueueFocusActive,
 	isWallpaperSafeShelfPreset,
 	type QueueFocusPanelInfo,
@@ -59,6 +60,7 @@ export interface VisualEngineRefs {
 	shelfCameraModeRef?: RefObject<string>;
 	shelfPresenceRef?: RefObject<string>;
 	wallpaperSafeRef?: RefObject<boolean>;
+	secondaryLeftDisplaySeamGuardRef?: RefObject<boolean>;
 	coverUrlRef?: RefObject<string>;
 	coverUrlVersionRef?: RefObject<number>;
 	onShelfPlayQueueIndexRef?: RefObject<((index: number) => void) | undefined>;
@@ -538,6 +540,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				camera: renderer.camera,
 				shelfManager,
 			});
+			const secondaryPlaylistEdgeGuard = createSecondaryPlaylistEdgeGuard();
 			if (cancelled || disposedRef.current) {
 				offAudio();
 				offLyrics();
@@ -567,7 +570,10 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				getViewportHeight: () => window.innerHeight || host.clientHeight || 0,
 				getQueueFocusActive: (pointer) => {
 					const panel = getPlaylistPanelFocusInfo(document);
-					return isQueueFocusActive(pointer, panel);
+					return isQueueFocusActive(pointer, panel, {
+						secondaryLeftDisplaySeamGuardActive: refs.secondaryLeftDisplaySeamGuardRef?.current === true,
+						secondaryEdgeGuard: secondaryPlaylistEdgeGuard,
+					});
 				},
 				getSideShelfFocusHit,
 			});
@@ -638,5 +644,5 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			handles = null;
 			refs.lifecycleRef.current = null;
 		};
-	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.wallpaperSafeRef, refs.coverUrlRef, refs.coverUrlVersionRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
+	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.wallpaperSafeRef, refs.secondaryLeftDisplaySeamGuardRef, refs.coverUrlRef, refs.coverUrlVersionRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
 }
