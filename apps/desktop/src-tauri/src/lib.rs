@@ -175,6 +175,30 @@ fn updater_public_key_configured_from_plugin_config(
         .unwrap_or(false)
 }
 
+fn single_instance_window_reactivation_steps() -> [&'static str; 3] {
+    ["show", "unminimize", "set_focus"]
+}
+
+fn reactivate_main_window_for_single_instance(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(commands::labels::MAIN) else {
+        return;
+    };
+    for step in single_instance_window_reactivation_steps() {
+        match step {
+            "show" => {
+                let _ = window.show();
+            }
+            "unminimize" => {
+                let _ = window.unminimize();
+            }
+            "set_focus" => {
+                let _ = window.set_focus();
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn run() {
     let app_data_dir = paths::resolve_app_data_dir();
     let log_dir = paths::resolve_log_dir();
@@ -202,6 +226,9 @@ pub fn run() {
     let setup_log_dir = log_dir.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            reactivate_main_window_for_single_instance(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
@@ -338,5 +365,13 @@ mod tests {
         assert!(updater_public_key_configured_from_plugin_config(
             &tauri::utils::config::PluginConfig(plugins)
         ));
+    }
+
+    #[test]
+    fn single_instance_reactivation_uses_baseline_main_window_steps() {
+        assert_eq!(
+            single_instance_window_reactivation_steps(),
+            ["show", "unminimize", "set_focus"]
+        );
     }
 }
