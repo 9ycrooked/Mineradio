@@ -39,5 +39,5 @@ test("runtime session rejects blank cookie and clear removes provider only", () 
   expect(getProviderCookie("qq")).toBe("uin=123; qqmusic_key=runtime");
 
   clearRuntimeProviderCookie("qq");
-  expect(getProviderCookie("qq")).toBeUndefined();
+  expect(getProviderCookie("qq")).toBe(undefined);
 });

@@ -472,3 +472,30 @@ test("GET /audio-proxy returns injected proxy response directly", async () => {
   expect(r.headers.get("access-control-allow-origin")).toBe("*");
   expect(await r.text()).toBe("song");
 });
+
+test("GET /image-proxy returns injected proxy response directly", async () => {
+  const handler = createRouteHandler({
+    imageProxy: async ({ target, request }) => {
+      expect(target).toBe("https://img.example.test/cover.jpg");
+      expect(request.headers.get("cookie")).toBe("session=secret");
+      return new Response("cover", {
+        status: 200,
+        headers: {
+          "content-type": "image/jpeg",
+          "access-control-allow-origin": "*"
+        }
+      });
+    }
+  });
+
+  const r = await handler(
+    new Request("http://127.0.0.1/image-proxy?url=https%3A%2F%2Fimg.example.test%2Fcover.jpg", {
+      headers: { cookie: "session=secret" }
+    })
+  );
+
+  expect(r.status).toBe(200);
+  expect(r.headers.get("content-type")).toBe("image/jpeg");
+  expect(r.headers.get("access-control-allow-origin")).toBe("*");
+  expect(await r.text()).toBe("cover");
+});

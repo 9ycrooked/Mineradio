@@ -196,6 +196,21 @@ test("resolveSongUrl POSTs to the cross-source song-url endpoint", async () => {
 	});
 });
 
+test("imageProxyUrl mirrors baseline cover proxy URL construction for remote covers only", () => {
+	const client = new SidecarClient(BASE);
+	expect(client.imageProxyUrl("https://img.example/a.jpg")).toBe(`${BASE}/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg`);
+	expect(client.imageProxyUrl("http://img.example/a.jpg")).toBe(`${BASE}/image-proxy?url=http%3A%2F%2Fimg.example%2Fa.jpg`);
+	expect(client.imageProxyUrl("data:image/png;base64,abc")).toBe("data:image/png;base64,abc");
+	expect(client.imageProxyUrl("blob:http://local/abc")).toBe("blob:http://local/abc");
+	expect(client.imageProxyUrl("file:///tmp/a.jpg")).toBe("");
+	expect(client.imageProxyUrl("")).toBe("");
+});
+
+test("imageProxyUrl supports baseline cache-bust parameter", () => {
+	const client = new SidecarClient(BASE);
+	expect(client.imageProxyUrl("https://img.example/a.jpg", true, 12345)).toBe(`${BASE}/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg&v=12345`);
+});
+
 test("lyric POSTs the Track body and parses the LyricPayload envelope", async () => {
 	let called = false;
 	const fake = (async (input: RequestInfo | URL, init?: RequestInit) => {

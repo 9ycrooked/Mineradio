@@ -200,6 +200,15 @@ export class SidecarClient {
 		return `${this.baseUrl}/audio-proxy?${params.toString()}`;
 	}
 
+	imageProxyUrl(url: string, cacheBust = false, now = Date.now()): string {
+		if (!url) return "";
+		if (/^data:image\//i.test(url) || /^blob:/i.test(url)) return url;
+		if (!/^https?:\/\//i.test(url)) return "";
+		const params = new URLSearchParams({ url });
+		if (cacheBust) params.set("v", String(now));
+		return `${this.baseUrl}/image-proxy?${params.toString()}`;
+	}
+
 	async lyric(track: Track): Promise<LyricPayload> {
 		return this.request(
 			"POST",

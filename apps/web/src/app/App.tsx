@@ -87,6 +87,7 @@ export type AppProps = {
 
 export function App({ SplashComponent = SplashHost }: AppProps = {}): ReactElement {
 	const [sidecarClient, setSidecarClient] = useState<SidecarClient | null>(null);
+	const [sidecarBaseUrl, setSidecarBaseUrl] = useState("");
 	const [splashActive, setSplashActive] = useState<boolean>(SHOW_SPLASH);
 	const [loginModalOpen, setLoginModalOpen] = useState(false);
 	const [neteaseStatus, setNeteaseStatus] = useState<ProviderLoginStatus | null>(null);
@@ -150,6 +151,7 @@ export function App({ SplashComponent = SplashHost }: AppProps = {}): ReactEleme
 	const initSidecar = useCallback((cfg: RuntimeConfig) => {
 		const client = new SidecarClient(cfg.sidecarBaseUrl);
 		setSidecarClient(client);
+		setSidecarBaseUrl(cfg.sidecarBaseUrl);
 		return client;
 	}, []);
 
@@ -583,6 +585,7 @@ export function App({ SplashComponent = SplashHost }: AppProps = {}): ReactEleme
 				queue={queue}
 				currentTrack={currentTrack}
 				currentCoverUrl={currentTrack?.coverUrl}
+				sidecarBaseUrl={sidecarBaseUrl}
 				coverResolution={1.55}
 				splashActive={splashActive}
 				homeActive={emptyHomeActive}

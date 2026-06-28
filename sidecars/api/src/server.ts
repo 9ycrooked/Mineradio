@@ -17,6 +17,7 @@ import {
 import { normalizeError } from "./services/fallback";
 import { buildDiagnostics } from "./services/diagnostics";
 import { resolveAudioProxy, type AudioProxy } from "./services/audio-proxy";
+import { resolveImageProxy, type ImageProxy } from "./services/image-proxy";
 import {
   crossSourceResolver,
   type CrossSourceResolver
@@ -29,12 +30,14 @@ import {
 export type RouteHandlerDeps = {
   crossSourceResolver?: CrossSourceResolver;
   audioProxy?: AudioProxy;
+  imageProxy?: ImageProxy;
   providerAdapters?: Record<ProviderId, ProviderAdapter>;
 };
 
 export function createRouteHandler(deps: RouteHandlerDeps = {}) {
   const resolver = deps.crossSourceResolver ?? crossSourceResolver;
   const audioProxy = deps.audioProxy ?? resolveAudioProxy;
+  const imageProxy = deps.imageProxy ?? resolveImageProxy;
   const providerAdapters = deps.providerAdapters ?? providers;
 
   return async function handleRoute(request: Request): Promise<Response> {
@@ -65,6 +68,11 @@ export function createRouteHandler(deps: RouteHandlerDeps = {}) {
     if (path === "/audio-proxy" && method === "GET") {
       const target = url.searchParams.get("url") ?? "";
       return await audioProxy({ target, request });
+    }
+
+    if (path === "/image-proxy" && method === "GET") {
+      const target = url.searchParams.get("url") ?? "";
+      return await imageProxy({ target, request });
     }
 
     if (path === "/search" && method === "GET") {

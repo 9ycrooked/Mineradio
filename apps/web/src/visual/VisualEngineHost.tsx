@@ -23,6 +23,7 @@ export interface VisualEngineHostProps {
 	queue?: Track[];
 	currentTrack?: Track | null;
 	currentCoverUrl?: string | null;
+	sidecarBaseUrl?: string | null;
 	coverResolution?: number;
 	fxDefaults?: Partial<FxState>;
 	splashActive?: boolean;
@@ -63,6 +64,16 @@ export function resolveVisualCoverUrl(currentCoverUrl: string | null | undefined
 	return currentCoverUrl ?? currentTrack?.coverUrl ?? "";
 }
 
+export function resolveVisualCoverUrlForSidecar(coverUrl: string, sidecarBaseUrl: string | null | undefined): string {
+	if (!coverUrl) return "";
+	if (/^data:image\//i.test(coverUrl) || /^blob:/i.test(coverUrl)) return coverUrl;
+	if (!/^https?:\/\//i.test(coverUrl)) return "";
+	const base = String(sidecarBaseUrl ?? "").replace(/\/$/, "");
+	if (!base) return coverUrl;
+	const params = new URLSearchParams({ url: coverUrl });
+	return `${base}/image-proxy?${params.toString()}`;
+}
+
 export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const hostRef = useRef<HTMLDivElement | null>(null);
 	const positionRef = useRef<number>(props.positionMs);
@@ -70,7 +81,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const lyricLinesRef = useRef<VisualLyricLine[]>(mapLyricPayload(props.lyricsPayload));
 	const shelfItemsRef = useRef<ShelfItem[]>([]);
 	const shelfItemsVersionRef = useRef<number>(0);
-	const coverUrlRef = useRef<string>(resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack));
+	const coverUrlRef = useRef<string>(resolveVisualCoverUrlForSidecar(resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack), props.sidecarBaseUrl));
 	const coverUrlVersionRef = useRef<number>(0);
 	const splashActiveRef = useRef<boolean>(props.splashActive ?? false);
 	const homeActiveRef = useRef<boolean>(props.homeActive ?? false);
@@ -101,7 +112,10 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	onShelfPlayQueueIndexRef.current = props.onShelfPlayQueueIndex;
 	onShelfDetailRowClickRef.current = props.onShelfDetailRowClick;
 	onShelfOpenDetailContentRef.current = props.onShelfOpenDetailContent;
-	const nextCoverUrl = resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack);
+	const nextCoverUrl = resolveVisualCoverUrlForSidecar(
+		resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack),
+		props.sidecarBaseUrl,
+	);
 	if (coverUrlRef.current !== nextCoverUrl) {
 		coverUrlRef.current = nextCoverUrl;
 		coverUrlVersionRef.current += 1;

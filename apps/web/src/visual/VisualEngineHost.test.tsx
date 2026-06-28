@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import {
 	resolveVisualCoverUrl,
+	resolveVisualCoverUrlForSidecar,
 	resolveRuntimeShelfMode,
 	syncRuntimeShelfModeOverride,
 	VisualEngineHost,
@@ -42,4 +43,11 @@ test("resolveVisualCoverUrl prefers explicit currentCoverUrl and falls back to c
 	expect(resolveVisualCoverUrl("override.jpg", { coverUrl: "track.jpg" } as never)).toBe("override.jpg");
 	expect(resolveVisualCoverUrl(undefined, { coverUrl: "track.jpg" } as never)).toBe("track.jpg");
 	expect(resolveVisualCoverUrl(null, null)).toBe("");
+});
+
+test("resolveVisualCoverUrlForSidecar proxies remote covers through sidecar and preserves inline sources", () => {
+	expect(resolveVisualCoverUrlForSidecar("https://img.example/a.jpg", "http://127.0.0.1:4111")).toBe("http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg");
+	expect(resolveVisualCoverUrlForSidecar("data:image/png;base64,abc", "http://127.0.0.1:4111")).toBe("data:image/png;base64,abc");
+	expect(resolveVisualCoverUrlForSidecar("file:///tmp/a.jpg", "http://127.0.0.1:4111")).toBe("");
+	expect(resolveVisualCoverUrlForSidecar("https://img.example/a.jpg", "")).toBe("https://img.example/a.jpg");
 });
