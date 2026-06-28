@@ -46,6 +46,7 @@ export interface VisualEngineRefs {
 	shelfItemsRef: RefObject<ShelfItem[]>;
 	shelfItemsVersionRef: RefObject<number>;
 	splashActiveRef: RefObject<boolean>;
+	homeActiveRef?: RefObject<boolean>;
 	shelfModeRef?: RefObject<string>;
 	shelfCameraModeRef?: RefObject<string>;
 	shelfPresenceRef?: RefObject<string>;
@@ -216,6 +217,30 @@ export function setRuntimeShelfMode(
 	onShelfModeChange?.(mode);
 }
 
+const HOME_WALLPAPER_PRESET = 5;
+
+export function resolveHomeVisualPreset(
+	homeActive: boolean,
+	currentPreset: number,
+	defaultPreset: number,
+	previousPreset: number | null,
+): { preset: number; previousPreset: number | null; changed: boolean } {
+	if (homeActive) {
+		const nextPreviousPreset = previousPreset ?? currentPreset;
+		return {
+			preset: HOME_WALLPAPER_PRESET,
+			previousPreset: nextPreviousPreset,
+			changed: currentPreset !== HOME_WALLPAPER_PRESET || previousPreset === null,
+		};
+	}
+	const target = previousPreset ?? defaultPreset;
+	return {
+		preset: target,
+		previousPreset: null,
+		changed: currentPreset !== target,
+	};
+}
+
 function disposeHandles(handles: MountedHandles | null): void {
 	if (!handles) return;
 	try {
@@ -327,6 +352,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				coverResolution: refs.coverResolution,
 				fx: refs.fxDefaults as FxState | undefined,
 			});
+			let homeVisualPreviousPreset: number | null = null;
+			let homeVisualPreviewActive = false;
 			if (cancelled || disposedRef.current) {
 				homeVisual.dispose();
 				audioEngine.dispose();
@@ -401,6 +428,34 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				audioEngine.update(ctx.dt);
 			});
 			const offHome = renderLoop.registerStep(RenderStepSlot.HomeVisual, (ctx) => {
+				const homeActive = refs.homeActiveRef?.current === true;
+				const enteringHomePreview = homeActive && !homeVisualPreviewActive;
+				const preset = resolveHomeVisualPreset(
+					homeActive,
+					homeVisual.getPreset(),
+					refs.fxDefaults?.preset ?? 0,
+					homeVisualPreviousPreset,
+				);
+				if (preset.changed) {
+					homeVisual.setPreset(preset.preset, {
+						silent: true,
+						preserveCamera: false,
+						skipTransition: homeActive,
+						noSave: true,
+					});
+					cinema.setPresetCameraBaseline(preset.preset);
+				} else if (enteringHomePreview) {
+					cinema.setPresetCameraBaseline(preset.preset);
+				}
+				homeVisualPreviousPreset = preset.previousPreset;
+				homeVisualPreviewActive = homeActive;
+				const uniforms = homeVisual.getField().materialUniforms as Record<string, { value: unknown }>;
+				if (homeVisualPreviewActive) {
+					if (typeof uniforms.uAlpha?.value === "number" && uniforms.uAlpha.value < 0.96) {
+						uniforms.uAlpha.value = 0.96;
+					}
+					if (uniforms.uFloatAlpha) uniforms.uFloatAlpha.value = 0;
+				}
 				homeVisual.update(ctx);
 			});
 			const offCamera = renderLoop.registerStep(RenderStepSlot.CameraCinematic, (ctx) => {
@@ -529,5 +584,5 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			handles = null;
 			refs.lifecycleRef.current = null;
 		};
-	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.wallpaperSafeRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
+	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.wallpaperSafeRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
 }

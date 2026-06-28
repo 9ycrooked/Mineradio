@@ -13,4 +13,5 @@ test("EmptyHomeHost renders the baseline empty-home music landing structure", ()
 	expect(html).toContain("每日推荐");
 	expect(html).toContain("私人电台");
 	expect(html).toContain('id="home-tile-row"');
+	expect(html).toContain('class="home-tile-action"');
 });

@@ -112,6 +112,7 @@ export interface CinemaCamera {
 	update(ctx: FrameContext): void;
 	applyBeat(burst: number, isScheduled: boolean): void;
 	setFocusZone(type: FocusZoneType | null, opts?: SetFocusZoneOptions): void;
+	setPresetCameraBaseline(preset: number): void;
 	setProfile(profile: CinemaProfile): void;
 	getProfile(): CinemaProfile;
 	getState(): CinemaState;
@@ -463,6 +464,61 @@ export function createCinemaCamera(opts: CinemaCameraOptions): CinemaCamera {
 		}, FOCUS_ZONE_ACTIVATE_DELAY_MS);
 	}
 
+	function setPresetCameraBaseline(preset: number): void {
+		if (disposed) return;
+		const p = Math.max(0, Math.min(6, Number(preset) || 0));
+		if (p === 1) {
+			orbit.userRadius = 6.2;
+			orbit.userPhi = 0.03;
+			orbit.userTheta = 0.0;
+			orbit.baselineRadius = 6.2;
+			orbit.baselinePhi = 0.03;
+			orbit.baselineTheta = 0.0;
+		} else if (p === 2) {
+			orbit.userRadius = 7.0;
+			orbit.userPhi = 0.15;
+			orbit.userTheta = 0.0;
+			orbit.baselineRadius = 7.0;
+			orbit.baselinePhi = 0.15;
+			orbit.baselineTheta = 0.0;
+		} else if (p === 3) {
+			orbit.userRadius = 8.0;
+			orbit.userPhi = 0.05;
+			orbit.userTheta = 0.0;
+			orbit.baselineRadius = 8.0;
+			orbit.baselinePhi = 0.05;
+			orbit.baselineTheta = 0.0;
+		} else if (p === 4) {
+			orbit.userRadius = 6.5;
+			orbit.userPhi = 0.04;
+			orbit.userTheta = 0.0;
+			orbit.baselineRadius = 6.5;
+			orbit.baselinePhi = 0.04;
+			orbit.baselineTheta = 0.0;
+		} else if (p === 5) {
+			orbit.userRadius = 9.4;
+			orbit.userPhi = 0.34;
+			orbit.userTheta = -0.52;
+			orbit.baselineRadius = 9.4;
+			orbit.baselinePhi = 0.34;
+			orbit.baselineTheta = -0.52;
+		} else if (p === 6) {
+			orbit.userRadius = 7.4;
+			orbit.userPhi = 0.10;
+			orbit.userTheta = 0.18;
+			orbit.baselineRadius = 7.4;
+			orbit.baselinePhi = 0.10;
+			orbit.baselineTheta = 0.18;
+		} else {
+			orbit.userRadius = 6.6;
+			orbit.userPhi = 0.08;
+			orbit.userTheta = 0.0;
+			orbit.baselineRadius = 6.6;
+			orbit.baselinePhi = 0.08;
+			orbit.baselineTheta = 0.0;
+		}
+	}
+
 	function scheduleBeatCamera(time: number, burst: number, isScheduled: boolean, snapshot: AudioSnapshot): void {
 		if (!profile.cinema) return;
 		if (!isFinite(time)) return;
@@ -582,6 +638,7 @@ export function createCinemaCamera(opts: CinemaCameraOptions): CinemaCamera {
 			scheduleBeatCamera(now, burst, isScheduled, snapshot);
 		},
 		setFocusZone,
+		setPresetCameraBaseline,
 		setProfile(next) {
 			profile.cinema = next.cinema;
 			profile.cinemaShake = next.cinemaShake;

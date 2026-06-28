@@ -188,6 +188,23 @@ test("setFocusZone(immediate) applies baseline shelf-side focus target and cam p
 	cinema.dispose();
 });
 
+test("setPresetCameraBaseline applies baseline wallpaper pulse camera numbers", () => {
+	const camera = makeFakeCamera();
+	const cinema = createCinemaCamera({
+		camera: camera as never,
+		defaultProfile: { cinema: true, cinemaShake: 1.0, isDj: false, trackScaleAuto: true },
+	});
+	cinema.setPresetCameraBaseline(5);
+	const orbit = cinema.getState().orbit;
+	expect(orbit.userRadius).toBe(9.4);
+	expect(orbit.userPhi).toBe(0.34);
+	expect(orbit.userTheta).toBe(-0.52);
+	expect(orbit.baselineRadius).toBe(9.4);
+	expect(orbit.baselinePhi).toBe(0.34);
+	expect(orbit.baselineTheta).toBe(-0.52);
+	cinema.dispose();
+});
+
 test("setFocusZone delayed activation and queue exit timing match baseline timers", () => {
 	const camera = makeFakeCamera();
 	let timerNow = 0;

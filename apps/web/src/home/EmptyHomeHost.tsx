@@ -10,11 +10,11 @@ export interface EmptyHomeHostProps {
 }
 
 const STARTER_TILES = [
-	{ tone: "search", title: "搜索歌曲", sub: "从歌名、歌手或播客开始" },
-	{ tone: "local", title: "导入本地", sub: "播放本地音频文件" },
-	{ tone: "guide", title: "视觉引导", sub: "熟悉粒子、歌词和歌单架" },
-	{ tone: "playlist", title: "打开歌单", sub: "登录后同步你的音乐库" },
-	{ tone: "library", title: "继续探索", sub: "推荐会随播放逐步补全" },
+	{ tone: "search", title: "搜索歌曲", sub: "从歌名、歌手或播客开始", action: "Search" },
+	{ tone: "local", title: "导入本地", sub: "播放本地音频文件", action: "Import" },
+	{ tone: "guide", title: "视觉引导", sub: "熟悉粒子、歌词和歌单架", action: "Visual" },
+	{ tone: "playlist", title: "打开歌单", sub: "登录后同步你的音乐库", action: "Library" },
+	{ tone: "library", title: "继续探索", sub: "推荐会随播放逐步补全", action: "Explore" },
 ];
 
 export function EmptyHomeHost(props: EmptyHomeHostProps): ReactElement {
@@ -91,6 +91,7 @@ export function EmptyHomeHost(props: EmptyHomeHostProps): ReactElement {
 								<div className="home-tile-cover" />
 								<div className="home-tile-title">{tile.title}</div>
 								<div className="home-tile-sub">{tile.sub}</div>
+								<div className="home-tile-action">{tile.action}</div>
 							</button>
 						))}
 					</div>

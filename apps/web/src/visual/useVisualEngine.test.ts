@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isRuntimeShelfPreviewActive, setRuntimeShelfMode } from "./useVisualEngine";
+import { isRuntimeShelfPreviewActive, resolveHomeVisualPreset, setRuntimeShelfMode } from "./useVisualEngine";
 
 test("isRuntimeShelfPreviewActive follows side-auto shelf visibility readiness", () => {
 	expect(isRuntimeShelfPreviewActive("auto", 0.17)).toBe(true);
@@ -20,4 +20,21 @@ test("setRuntimeShelfMode notifies the persistent shelf mode source", () => {
 	const calls: string[] = [];
 	setRuntimeShelfMode(ref, "side", (mode) => calls.push(mode));
 	expect(calls).toEqual(["side"]);
+});
+
+test("resolveHomeVisualPreset applies baseline idle wallpaper preset and restores previous preset", () => {
+	const activated = resolveHomeVisualPreset(true, 2, 0, null);
+	expect(activated).toEqual({ preset: 5, previousPreset: 2, changed: true });
+
+	const held = resolveHomeVisualPreset(true, 5, 0, 2);
+	expect(held).toEqual({ preset: 5, previousPreset: 2, changed: false });
+
+	const activatedFromSamePreset = resolveHomeVisualPreset(true, 5, 0, null);
+	expect(activatedFromSamePreset).toEqual({ preset: 5, previousPreset: 5, changed: true });
+
+	const restored = resolveHomeVisualPreset(false, 5, 0, 2);
+	expect(restored).toEqual({ preset: 2, previousPreset: null, changed: true });
+
+	const restoredToSamePreset = resolveHomeVisualPreset(false, 5, 0, 5);
+	expect(restoredToSamePreset).toEqual({ preset: 5, previousPreset: null, changed: false });
 });

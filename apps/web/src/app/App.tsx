@@ -7,7 +7,7 @@ import { usePlaybackStore } from "../stores/playback-store";
 import { useProviderStore } from "../stores/provider-store";
 import { useSearchStore } from "../stores/search-store";
 import { useUiStore } from "../stores/ui-store";
-import { getRuntimeConfig, type RuntimeConfig } from "../tauri/runtime";
+import { getRuntimeConfig, importJsonFile, type RuntimeConfig } from "../tauri/runtime";
 import { BottomControlsHost } from "../components/shell/BottomControlsHost";
 import { SearchShell } from "../components/shell/SearchShell";
 import { TopRightControls } from "../components/shell/TopRightControls";
@@ -36,12 +36,34 @@ function audioElementSupported(): boolean {
 	);
 }
 
+export function isHomeBlankDismissElement(target: EventTarget | null): boolean {
+	if (!(target instanceof Element)) return false;
+	const home = target.closest("#empty-home");
+	if (!home) return false;
+	return !target.closest([
+		".home-card",
+		".home-tile",
+		".home-chip",
+		"button",
+		"input",
+		"textarea",
+		"#search-area",
+		"#top-right",
+		"#bottom-bar",
+		"#bottom-handle",
+		".modal",
+		"#login-modal",
+	].join(","));
+}
+
 export function App(): ReactElement {
 	const [sidecarClient, setSidecarClient] = useState<SidecarClient | null>(null);
 	const [splashActive, setSplashActive] = useState<boolean>(SHOW_SPLASH);
 	const [loginModalOpen, setLoginModalOpen] = useState(false);
 	const [neteaseStatus, setNeteaseStatus] = useState<ProviderLoginStatus | null>(null);
 	const [qqStatus, setQqStatus] = useState<ProviderLoginStatus | null>(null);
+	const [homeForcedOpen, setHomeForcedOpen] = useState(false);
+	const [homeSuppressed, setHomeSuppressed] = useState(false);
 
 	const currentTrack = usePlaybackStore((s) => s.currentTrack);
 	const queue = usePlaybackStore((s) => s.queue);
@@ -100,9 +122,13 @@ export function App(): ReactElement {
 		return client;
 	}, []);
 
-	const emptyHomeActive = !splashActive && !currentTrack && queue.length === 0 && !isPlaying;
+	const emptyHomeCoreAllowed = !currentTrack && queue.length === 0 && !isPlaying;
+	const emptyHomeActive = !splashActive && (homeForcedOpen || (!homeSuppressed && emptyHomeCoreAllowed));
+	const homeControlsLocked = emptyHomeActive && homeForcedOpen && !consoleVisible && emptyHomeCoreAllowed;
 
 	const revealConsole = useCallback(() => {
+		setHomeForcedOpen(false);
+		setHomeSuppressed(false);
 		setConsole(true);
 	}, [setConsole]);
 
@@ -128,10 +154,35 @@ export function App(): ReactElement {
 	}, [showToast]);
 
 	const goHome = useCallback(() => {
+		if (homeForcedOpen || emptyHomeActive) {
+			setHomeForcedOpen(false);
+			setHomeSuppressed(true);
+			setConsole(false);
+			setMiniQueue(false);
+			showToast("已关闭 Home");
+			return;
+		}
+		setHomeSuppressed(false);
+		setHomeForcedOpen(true);
 		setConsole(false);
 		setMiniQueue(false);
 		focusSearch();
-	}, [focusSearch, setConsole, setMiniQueue]);
+		showToast("已回到 Home");
+	}, [emptyHomeActive, focusSearch, homeForcedOpen, setConsole, setMiniQueue, showToast]);
+
+	const importLocalJson = useCallback(async () => {
+		try {
+			const result = await importJsonFile();
+			if (result.cancelled) {
+				showToast("本地导入需要在 Tauri 窗口中选择文件");
+				return;
+			}
+			showToast(result.path ? `已读取 ${result.path}` : "已读取导入文件");
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "本地导入失败";
+			showToast(message);
+		}
+	}, [showToast]);
 
 	const setProviderStatus = useCallback((status: ProviderLoginStatus) => {
 		if (status.provider === "netease") setNeteaseStatus(status);
@@ -162,6 +213,16 @@ export function App(): ReactElement {
 		void refreshProviderStatus("netease");
 		void refreshProviderStatus("qq");
 	}, [refreshProviderStatus]);
+
+	const openHomeLibrary = useCallback(() => {
+		if (neteaseStatus?.loggedIn || qqStatus?.loggedIn) {
+			searchQuery("我的歌单");
+			showToast("正在用账号歌单关键词打开搜索入口");
+			return;
+		}
+		openLoginModal();
+		showToast("登录后同步歌单库");
+	}, [neteaseStatus?.loggedIn, openLoginModal, qqStatus?.loggedIn, searchQuery, showToast]);
 
 	const closeLoginModal = useCallback(() => {
 		setLoginModalOpen(false);
@@ -248,10 +309,27 @@ export function App(): ReactElement {
 		document.body.classList.toggle("splash-active", splashActive);
 		document.body.classList.toggle("empty-home-active", emptyHomeActive);
 		document.body.classList.toggle("controls-visible", consoleVisible);
+		document.body.classList.toggle("home-wallpaper-preview", emptyHomeActive);
+		document.body.classList.toggle("home-controls-locked", homeControlsLocked);
 		return () => {
-			document.body.classList.remove("splash-active", "empty-home-active", "controls-visible");
+			document.body.classList.remove("splash-active", "empty-home-active", "controls-visible", "home-wallpaper-preview", "home-controls-locked");
 		};
-	}, [consoleVisible, emptyHomeActive, splashActive]);
+	}, [consoleVisible, emptyHomeActive, homeControlsLocked, splashActive]);
+
+	useEffect(() => {
+		if (!emptyHomeActive || typeof document === "undefined") return;
+		const onBlankClick = (event: MouseEvent) => {
+			if (!isHomeBlankDismissElement(event.target)) return;
+			event.preventDefault();
+			event.stopPropagation();
+			setHomeForcedOpen(false);
+			setHomeSuppressed(true);
+			setConsole(false);
+			setMiniQueue(false);
+		};
+		document.addEventListener("click", onBlankClick, true);
+		return () => document.removeEventListener("click", onBlankClick, true);
+	}, [emptyHomeActive, setConsole, setMiniQueue]);
 
 	useEffect(() => {
 		if (!toast) return;
@@ -437,6 +515,7 @@ export function App(): ReactElement {
 				currentTrack={currentTrack}
 				coverResolution={1.55}
 				splashActive={splashActive}
+				homeActive={emptyHomeActive}
 				onShelfPlayQueueIndex={(index) => usePlaybackStore.getState().playAt(index)}
 				onShelfDetailRowClick={playShelfDetailRow}
 				onShelfOpenDetailContent={(payload, contentList) => {
@@ -449,13 +528,16 @@ export function App(): ReactElement {
 			/>
 			<EmptyHomeHost
 				onSearchFocus={focusSearch}
-				onOpenLibrary={() => showUnavailable("歌单库需要登录后同步，先试试搜索歌单名")}
+				onOpenLibrary={openHomeLibrary}
 				onOpenConsole={revealConsole}
 				onSearchQuery={searchQuery}
-				onUpload={() => showUnavailable("本地导入会在 Tauri 文件对话框中打开")}
-				onGuide={() => showUnavailable("视觉引导入口正在迁移，当前可先使用搜索和播放")}
+				onUpload={() => void importLocalJson()}
+				onGuide={() => {
+					revealConsole();
+					showToast("视觉引导已打开播放器控制台，播放后会进入粒子与歌词舞台");
+				}}
 			/>
-			<SearchShell client={sidecarClient} onFocus={focusSearch} onUpload={() => showUnavailable("本地导入会在 Tauri 文件对话框中打开")} />
+			<SearchShell client={sidecarClient} onFocus={focusSearch} onUpload={() => void importLocalJson()} />
 			<TopRightControls
 				onHome={goHome}
 				onLogin={openLoginModal}

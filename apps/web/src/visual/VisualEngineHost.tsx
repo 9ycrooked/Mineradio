@@ -25,6 +25,7 @@ export interface VisualEngineHostProps {
 	coverResolution?: number;
 	fxDefaults?: Partial<FxState>;
 	splashActive?: boolean;
+	homeActive?: boolean;
 	onShelfPlayQueueIndex?: (index: number) => void;
 	onShelfDetailRowClick?: (payload: ShelfDetailRowClickPayload) => void;
 	onShelfOpenDetailContent?: (payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListWriter) => void;
@@ -65,6 +66,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const shelfItemsRef = useRef<ShelfItem[]>([]);
 	const shelfItemsVersionRef = useRef<number>(0);
 	const splashActiveRef = useRef<boolean>(props.splashActive ?? false);
+	const homeActiveRef = useRef<boolean>(props.homeActive ?? false);
 	const shelfModeRef = useRef<string>(props.fxDefaults?.shelf ?? "side");
 	const runtimeShelfModeOverrideRef = useRef<string | null>(null);
 	const previousDefaultShelfModeRef = useRef<string | undefined>(props.fxDefaults?.shelf);
@@ -79,6 +81,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	positionRef.current = props.positionMs;
 	isPlayingRef.current = props.isPlaying;
 	splashActiveRef.current = props.splashActive ?? false;
+	homeActiveRef.current = props.homeActive ?? false;
 	syncRuntimeShelfModeOverride(
 		previousDefaultShelfModeRef,
 		runtimeShelfModeOverrideRef,
@@ -127,6 +130,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 		shelfItemsRef,
 		shelfItemsVersionRef,
 		splashActiveRef,
+		homeActiveRef,
 		shelfModeRef,
 		shelfCameraModeRef,
 		shelfPresenceRef,
