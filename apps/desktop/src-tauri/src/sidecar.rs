@@ -3,6 +3,8 @@ use std::process::Child;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const SIDECAR_LOG_FILE_NAME: &str = "sidecar-runtime.log";
+pub const SIDECAR_BINARY_ENV: &str = "MINERADIO_SIDECAR_BIN";
+pub const SIDECAR_BINARY_BASENAME: &str = "mineradio-sidecar-api";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct HealthInfo {
@@ -110,6 +112,88 @@ pub fn sidecar_log_path(log_dir: &Path) -> PathBuf {
     log_dir.join(SIDECAR_LOG_FILE_NAME)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SidecarLaunchPlan {
+    Dev,
+    Bundled(PathBuf),
+}
+
+impl SidecarLaunchPlan {
+    pub fn dev() -> Self {
+        Self::Dev
+    }
+
+    pub fn bundled(path: PathBuf) -> Self {
+        Self::Bundled(path)
+    }
+
+    pub fn is_bundled(&self) -> bool {
+        matches!(self, Self::Bundled(_))
+    }
+}
+
+pub fn resolve_sidecar_launch_plan_with_resource_dir(resource_dir: Option<&Path>) -> SidecarLaunchPlan {
+    let env_binary = std::env::var_os(SIDECAR_BINARY_ENV).and_then(|value| {
+        if value.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(value))
+        }
+    });
+    let packaged_binary = resource_dir
+        .and_then(find_packaged_sidecar_binary_in_dir)
+        .or_else(packaged_sidecar_binary_from_current_exe);
+    resolve_sidecar_launch_plan_from_sources(env_binary, packaged_binary)
+}
+
+pub fn resolve_sidecar_launch_plan_from_sources(
+    env_binary: Option<PathBuf>,
+    packaged_binary: Option<PathBuf>,
+) -> SidecarLaunchPlan {
+    if let Some(path) = env_binary {
+        return SidecarLaunchPlan::bundled(path);
+    }
+    if let Some(path) = packaged_binary {
+        return SidecarLaunchPlan::bundled(path);
+    }
+    SidecarLaunchPlan::dev()
+}
+
+pub fn packaged_sidecar_binary_from_current_exe() -> Option<PathBuf> {
+    let current_exe = std::env::current_exe().ok()?;
+    find_packaged_sidecar_binary_for_exe(&current_exe)
+}
+
+pub fn find_packaged_sidecar_binary_for_exe(current_exe: &Path) -> Option<PathBuf> {
+    let dir = current_exe.parent()?;
+    find_packaged_sidecar_binary_in_dir(dir)
+}
+
+pub fn find_packaged_sidecar_binary_in_dir(dir: &Path) -> Option<PathBuf> {
+    let mut matches = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(is_packaged_sidecar_binary_name)
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.into_iter().next()
+}
+
+fn is_packaged_sidecar_binary_name(file_name: &str) -> bool {
+    let expected_prefix = format!("{SIDECAR_BINARY_BASENAME}-");
+    if cfg!(target_os = "windows") {
+        file_name.starts_with(&expected_prefix) && file_name.ends_with(".exe")
+    } else {
+        file_name.starts_with(&expected_prefix)
+    }
+}
+
 pub fn sidecar_runtime_mark_spawned(
     state: &mut SidecarRuntimeState,
     child: Child,
@@ -190,15 +274,33 @@ pub fn allocate_port() -> u16 {
     port
 }
 
-pub fn build_sidecar_command(
+pub fn build_sidecar_command_with_resource_dir(
+    port: u16,
+    app_data_dir: &Path,
+    log_dir: &Path,
+    app_version: &str,
+    resource_dir: Option<&Path>,
+) -> std::process::Command {
+    let plan = resolve_sidecar_launch_plan_with_resource_dir(resource_dir);
+    build_sidecar_command_from_plan(&plan, port, app_data_dir, log_dir, app_version)
+}
+
+pub fn build_sidecar_command_from_plan(
+    plan: &SidecarLaunchPlan,
     port: u16,
     app_data_dir: &Path,
     log_dir: &Path,
     app_version: &str,
 ) -> std::process::Command {
-    let mut cmd = std::process::Command::new("bun");
-    cmd.args(["run", "sidecars/api/src/server.ts"]);
-    cmd.current_dir(workspace_root_from_manifest_dir());
+    let mut cmd = match plan {
+        SidecarLaunchPlan::Dev => {
+            let mut cmd = std::process::Command::new("bun");
+            cmd.args(["run", "sidecars/api/src/server.ts"]);
+            cmd.current_dir(workspace_root_from_manifest_dir());
+            cmd
+        }
+        SidecarLaunchPlan::Bundled(binary_path) => std::process::Command::new(binary_path),
+    };
     cmd.env("MINERADIO_SIDECAR_PORT", port.to_string());
     cmd.env("MINERADIO_APP_DATA_DIR", app_data_dir);
     cmd.env("MINERADIO_LOG_DIR", log_dir);
@@ -377,8 +479,10 @@ mod tests {
     }
 
     #[test]
-    fn build_sidecar_command_sets_program_args_and_env() {
-        let cmd = build_sidecar_command(
+    fn build_sidecar_command_uses_dev_bun_entry_when_no_bundled_binary_is_configured() {
+        let plan = SidecarLaunchPlan::dev();
+        let cmd = build_sidecar_command_from_plan(
+            &plan,
             54321,
             Path::new("/tmp/data"),
             Path::new("/tmp/logs"),
@@ -396,6 +500,7 @@ mod tests {
             cmd.get_current_dir(),
             Some(workspace_root_from_manifest_dir().as_path())
         );
+        assert!(!plan.is_bundled());
 
         let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = cmd.get_envs().collect();
         let get = |key: &str| -> Option<String> {
@@ -415,6 +520,73 @@ mod tests {
             get("MINERADIO_SIDECAR_LOG_FILE"),
             Some("/tmp/logs/sidecar-runtime.log".to_string())
         );
+    }
+
+    #[test]
+    fn build_sidecar_command_uses_bundled_binary_without_workspace_path() {
+        let plan = SidecarLaunchPlan::bundled(PathBuf::from("/opt/mineradio/mineradio-sidecar-api"));
+        let cmd = build_sidecar_command_from_plan(
+            &plan,
+            54321,
+            Path::new("/tmp/data"),
+            Path::new("/tmp/logs"),
+            "1.2.3",
+        );
+        assert_eq!(
+            cmd.get_program(),
+            std::ffi::OsStr::new("/opt/mineradio/mineradio-sidecar-api")
+        );
+        assert_eq!(cmd.get_args().count(), 0);
+        assert_eq!(cmd.get_current_dir(), None);
+        assert!(plan.is_bundled());
+    }
+
+    #[test]
+    fn resolve_sidecar_launch_plan_prefers_env_then_packaged_binary_then_dev() {
+        let env_path = PathBuf::from("/opt/mineradio/custom-sidecar");
+        let packaged_path = PathBuf::from("/opt/mineradio/mineradio-sidecar-api-x86_64-pc-windows-msvc.exe");
+
+        assert_eq!(
+            resolve_sidecar_launch_plan_from_sources(Some(env_path.clone()), Some(packaged_path.clone())),
+            SidecarLaunchPlan::bundled(env_path)
+        );
+        assert_eq!(
+            resolve_sidecar_launch_plan_from_sources(None, Some(packaged_path.clone())),
+            SidecarLaunchPlan::bundled(packaged_path)
+        );
+        assert_eq!(
+            resolve_sidecar_launch_plan_from_sources(None, None),
+            SidecarLaunchPlan::dev()
+        );
+    }
+
+    #[test]
+    fn find_packaged_sidecar_binary_for_exe_finds_tauri_external_bin_sibling() {
+        let root = std::env::temp_dir().join(format!("mineradio-sidecar-test-{}", now_ms()));
+        let exe_path = root.join(if cfg!(target_os = "windows") {
+            "Mineradio Tauri Rewrite.exe"
+        } else {
+            "Mineradio Tauri Rewrite"
+        });
+        std::fs::create_dir_all(&root).expect("create temp dir");
+        std::fs::write(&exe_path, b"app").expect("write fake exe");
+
+        let sidecar_file_name = if cfg!(target_os = "windows") {
+            "mineradio-sidecar-api-x86_64-pc-windows-msvc.exe"
+        } else {
+            "mineradio-sidecar-api-aarch64-apple-darwin"
+        };
+        let sidecar_path = root.join(sidecar_file_name);
+        std::fs::write(&sidecar_path, b"sidecar").expect("write fake sidecar");
+        std::fs::write(root.join("mineradio-sidecar-api.exe"), b"wrong suffix")
+            .expect("write wrong sidecar");
+
+        assert_eq!(
+            find_packaged_sidecar_binary_for_exe(&exe_path),
+            Some(sidecar_path)
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

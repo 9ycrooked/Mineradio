@@ -124,8 +124,15 @@ fn build_and_start_sidecar(
     app_data_dir: &std::path::Path,
     log_dir: &std::path::Path,
     app_version: &str,
+    resource_dir: Option<&std::path::Path>,
 ) -> Result<(), sidecar::SidecarError> {
-    let cmd = sidecar::build_sidecar_command(port, app_data_dir, log_dir, app_version);
+    let cmd = sidecar::build_sidecar_command_with_resource_dir(
+        port,
+        app_data_dir,
+        log_dir,
+        app_version,
+        resource_dir,
+    );
     let mut runtime = state
         .sidecar
         .lock()
@@ -139,6 +146,7 @@ fn start_sidecar_supervisor(
     app_data_dir: PathBuf,
     log_dir: PathBuf,
     app_version: String,
+    resource_dir: Option<PathBuf>,
 ) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(3));
@@ -159,7 +167,14 @@ fn start_sidecar_supervisor(
         if let Ok(mut runtime) = state.sidecar.lock() {
             sidecar::sidecar_runtime_mark_restarting(&mut runtime);
         }
-        let _ = build_and_start_sidecar(&state, port, &app_data_dir, &log_dir, &app_version);
+        let _ = build_and_start_sidecar(
+            &state,
+            port,
+            &app_data_dir,
+            &log_dir,
+            &app_version,
+            resource_dir.as_deref(),
+        );
     });
 }
 
@@ -224,7 +239,6 @@ pub fn run() {
     let setup_app_version = app_version.clone();
     let setup_app_data = app_data_dir.clone();
     let setup_log_dir = log_dir.clone();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             reactivate_main_window_for_single_instance(app);
@@ -266,12 +280,14 @@ pub fn run() {
             // runs under a real `tauri::Builder` app (`tauri dev`), never from
             // cargo tests (tests call only the pure module functions).
             let state = app.state::<AppState>();
+            let setup_resource_dir = app.path().resource_dir().ok();
             if let Err(e) = build_and_start_sidecar(
                 &state,
                 port,
                 &setup_app_data,
                 &setup_log_dir,
                 &setup_app_version,
+                setup_resource_dir.as_deref(),
             ) {
                 let mut runtime = state.sidecar.lock().map_err(|lock| lock.to_string())?;
                 if runtime.child.is_none() {
@@ -284,6 +300,7 @@ pub fn run() {
                 setup_app_data.clone(),
                 setup_log_dir.clone(),
                 setup_app_version.clone(),
+                setup_resource_dir.clone(),
             );
             Ok(())
         })

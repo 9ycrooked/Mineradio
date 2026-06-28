@@ -3,3 +3,4 @@ gen/schemas/
 
 # Rust build output (also covered by root .gitignore)
 /target
+/binaries/
