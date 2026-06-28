@@ -133,11 +133,38 @@
     ],
     "pending": [
       "startup-animation.mp4",
+      "home-splash-ready screenshot",
+      "home-splash-dismiss-flow recording",
+      "dismissed Home shell screenshots at 1280x720 and 1920x1080",
+      "search focused/history Home screenshot",
+      "bottom handle hover screenshot or short recording",
       "playing-console.mp4",
+      "fixed playback test track metadata",
+      "fixed playback cover source and rendered cover evidence",
+      "fixed playback lyric source and lyric sync evidence",
+      "proxied audio playback evidence",
+      "Netease anonymous provider evidence",
+      "Netease B1 credential-gated provider evidence",
+      "QQ anonymous provider evidence",
+      "QQ B1 credential-gated provider evidence",
+      "HomeVisual idle parity capture",
+      "stage lyrics playback recording",
       "playlist-shelf-flow.mp4",
+      "resize/camera parity recording",
+      "visual-host nonblank pixel-check or screenshot report",
       "desktop-lyrics-flow.mp4",
       "desktop lyrics white/black background readability captures",
-      "fixed playback test track with cover and lyric source"
+      "desktop lyrics lock/unlock and drag recordings",
+      "sidecar crash/restart and rolling logs evidence",
+      "login cookie extraction and sidecar injection evidence",
+      "installer install/launch evidence",
+      "updater check/install or approved signature-blocked manual-update evidence",
+      "uninstall evidence"
     ]
+  },
+  "captureNotes": {
+    "statusValues": ["recorded", "pending", "blocked"],
+    "evidenceRule": "This metadata records only the artifacts captured on 2026-06-27 plus pending final-parity evidence. Do not treat pending rows as completed captures until artifact paths are added.",
+    "credentialGates": ["Netease B1 credential-gated provider evidence", "QQ B1 credential-gated provider evidence", "login cookie extraction and sidecar injection evidence"]
   }
 }

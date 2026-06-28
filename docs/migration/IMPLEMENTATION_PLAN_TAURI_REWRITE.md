@@ -10,6 +10,23 @@
 
 ---
 
+## Current Status Notice
+
+更新时间：2026-06-28
+
+本文是 Tauri 重写早期的历史 master sequencing plan，用于说明 1-10 阶段的原始拆分、边界和设计意图。它不能作为当前直接实施入口，因为仓库已经存在多轮代码侧切片和审查结论，部分任务已经完成，部分任务仍缺少 WebView2、Windows、截图/录屏、release artifact 或 B1/B2/B3 输入证据。
+
+当前继续执行入口是：`docs/migration/plans/11-final-baseline-parity.md`。
+
+后续 agent 必须从该最终阶段计划继续，按 Phase 0-6 收口 Home、Search、Playback、Visual Engine、sidecar lifecycle、login、desktop lyrics、updater、installer、license 和 final sign-off。旧的 `docs/migration/plans/01-*.md` 到 `10-*.md` 只作为历史子系统参考；如与 `11-final-baseline-parity.md` 或当前审查记录冲突，以最终阶段计划和真实 evidence 为准。
+
+当前审查特别记录：
+
+- `417cedc` 只是 post-splash Empty Home mitigation，不是 Home parity；不能据此勾选 Home、Search、Bottom controls、Playback 或 Visual parity。
+- `8b86051` 已移除 web debug shell；后续手动验收需要确认 debug shell 未回归。
+- `b0186dd` 已在代码侧恢复 splash ready gate；启动动画仍需 baseline 对照录屏和 WebView2 手动证据。
+- 没有手动证据的 gate 不允许勾选。
+
 ## Platform Constraints
 
 - Bun workspaces require the root `package.json` `workspaces` field and produce a root `bun.lock`.

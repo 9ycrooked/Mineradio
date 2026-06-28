@@ -10,8 +10,23 @@
 
 ---
 
+## Current Status And Execution Note
+
+This plan is now a subsystem reference, not the current implementation entry point. The latest audit is tracked in `docs/migration/plans/11-final-baseline-parity.md`; new updater, release, installer, and license work must enter through Phase 5 of that plan, or through a smaller child plan derived from it.
+
+Current review findings that must not be treated as complete:
+
+- Updater is detection-only: code-side detection/status plumbing exists, but download/install/restart is still blocked until the updater signature/public-key path is resolved.
+- Pubkey/signature gate remains open: `pubkey` is not a completed release signing policy, and signed release assets or an approved manual-update decision are still required.
+- NSIS installer policy and manual evidence remain open: install, launch, update path, uninstall, shortcuts, per-user behavior, app id/product name/icon, packaged notices, and new app-data directory behavior need Windows proof.
+- License audit is unresolved: required dependency/license rows, QQ reference decisions, GSAP plugin status, transitive notices, and packaged notice inclusion must be closed before public release.
+
+Do not check any capability, release, or license gate from this plan alone. Updater/release/license closure belongs to `11-final-baseline-parity.md` Phase 5 and final sign-off belongs to Phase 6.
+
 ## Required Reading
 
+- `docs/migration/EXECUTION_PROTOCOL.md`
+- `docs/migration/plans/11-final-baseline-parity.md`
 - `docs/migration/LICENSE_GATE.md`
 - `docs/migration/CAPABILITY_PARITY_CHECKLIST.md`
 - `docs/migration/DEFERRED_CAPABILITIES.md`
@@ -22,6 +37,7 @@
 - Tauri app builds.
 - Capability parity gates are complete or explicitly marked.
 - Deferred capabilities have final release decisions.
+- `docs/migration/plans/11-final-baseline-parity.md` Phase 5 is being used as the active execution plan.
 
 ## Files
 
@@ -45,6 +61,8 @@
 ## Task 1: Tauri Updater
 
 P10.a code-side status: updater detection wiring is complete, but install/download is still blocked by the signature/public-key gate. No Windows install/update/uninstall gate is closed.
+
+Current status remains detection-only. Do not present the updater as release-complete until either signed Tauri updater download/install is proven or an approved manual-update release decision is recorded in Phase 5 of `11-final-baseline-parity.md`.
 
 - [x] **Step 1: Choose manifest mode**
 
@@ -74,6 +92,8 @@ Build lower version and higher version, point manifest to higher version, test d
 
 ## Task 2: Release Identity
 
+Release identity is not closed by static config alone. Phase 5 must collect Windows installer/manual evidence for app id, product name, shortcuts, per-user install behavior, icon, uninstall behavior, packaged notices, and the new app data directory policy.
+
 - [x] **Step 1: New app id**
 
 Confirm app id does not reuse `com.mineradio.desktop`.
@@ -93,6 +113,8 @@ Confirm Tauri app data directory does not read old Mineradio user directory by d
 P10.b static docs note the new data-directory policy and no old-user-data migration promise. Manual Windows app-data verification remains pending.
 
 ## Task 3: License Audit
+
+Current license audit status is unresolved. Do not publish, package for public release, or close `LICENSE_GATE.md` while required audit rows remain `待审核`, unknown, or dependent on unreviewed QQ reference code.
 
 - [ ] **Step 1: Audit npm/Bun dependencies**
 
@@ -139,6 +161,8 @@ State fork status and license.
 P10.b code-side done: README, NOTICE, and `THIRD_PARTY_NOTICES.md` updated. Manual gate remains: package artifacts must include notices, release notes must be written, and unresolved license rows must be closed before public release.
 
 ## Task 5: Final Gates
+
+Final gate closure belongs to `11-final-baseline-parity.md` Phase 5 and Phase 6. This plan can describe the required gates, but it must not be used to mark them complete without the evidence requested there.
 
 - [ ] **Step 1: Capability parity**
 

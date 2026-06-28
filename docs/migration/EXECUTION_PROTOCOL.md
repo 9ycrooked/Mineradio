@@ -1,6 +1,6 @@
 # Migration Execution Protocol
 
-更新时间：2026-06-27
+更新时间：2026-06-28
 
 本文定义 Tauri 二开迁移进入长流程开发时的执行规则。它补足 `IMPLEMENTATION_PLAN_TAURI_REWRITE.md` 的执行约束，避免后续 agent 直接在主分支或模糊计划上开工。
 
@@ -50,6 +50,8 @@
 3. 子系统计划：`docs/migration/plans/*.md`
 
 代码实现只能从子系统计划开始。总实现计划不能直接作为代码任务执行，因为它是 sequencing plan，不包含每个文件的最终代码。
+
+截至 2026-06-28，当前继续执行入口是 `docs/migration/plans/11-final-baseline-parity.md`。`docs/migration/plans/01-*.md` 到 `10-*.md` 保留为历史子系统参考；如旧计划与最终 parity 计划、`CAPABILITY_PARITY_CHECKLIST.md`、`DEFERRED_CAPABILITIES.md` 或 `LICENSE_GATE.md` 的当前 gate 记录冲突，以最终 parity 计划和真实 evidence 为准。
 
 ## 子计划完成标准
 
@@ -125,4 +127,4 @@
 
 ## 当前结论
 
-截至 2026-06-27，文档已足够支撑总方向和阶段拆分，但还不够支撑整段迁移代码一次性执行。必须继续按子系统补齐 `docs/migration/plans/*.md`，然后逐阶段进入 worktree 和 subagent 执行。
+截至 2026-06-28，迁移文档已完成最终阶段收口计划。后续不再从旧 master sequencing plan 直接开工，而是从 `docs/migration/plans/11-final-baseline-parity.md` 的 Phase 0-6 逐阶段执行：先对齐计划和证据，再恢复 Home/Search/Playback/Visual/Runtime/Release parity，最后用截图、录屏、Windows/WebView2、license 和 release artifact 证据关闭公开发布 gate。

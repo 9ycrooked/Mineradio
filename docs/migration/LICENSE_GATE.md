@@ -49,6 +49,17 @@
 - [ ] 打包产物包含必要 license/notice 文件。
 - [ ] Release notes 不暗示本项目是网易云、QQ 音乐或原 Mineradio 官方版本。
 
+## 发布前未解决项
+
+以下项目均为公开发布硬门槛。它们不是可以跳过的延期能力，也不能只凭代码侧接入记录关闭；必须有审核记录、打包产物证据或明确发布决策后才能勾选 Release Checklist 和 `CAPABILITY_PARITY_CHECKLIST.md` 的 License / Update gate。
+
+- Rust crates full audit：必须基于最终 `Cargo.lock` / Tauri plugin 集合完成全量直接与传递依赖 license 审核，并消除 Dependency Audit 表里的 Rust `待审核`。
+- npm transitive full audit：必须基于最终 `bun.lock` / workspace manifests 完成 npm 直接与传递依赖 full audit；当前只记录了关键直接依赖与部分 provider 传递依赖。
+- GSAP standard-only final check：必须确认最终打包内容只包含 GSAP 标准能力，不包含 Club/member/闭源插件、私有插件或未授权商业资产。
+- packaged notices inclusion：必须验证 Windows 安装包/安装后目录包含 GPL、原项目/fork notice、`NOTICE.md`、`THIRD_PARTY_NOTICES.md` 及必要第三方 license 文本。
+- release notes wording：真实 GitHub Release notes 必须明确本项目是 GPL-3.0 二开/fork/rewrite，不暗示网易云音乐、QQ 音乐或原 Mineradio 官方身份。
+- updater signature/release artifact relation：必须在 B2/B3 的最终发布路径下明确 Tauri updater manifest、签名字段、公钥配置、安装包资产和 release 上传资产之间的关系；若继续 detection-only，不得展示可安装更新为已通过 gate，且需在 release notes/UI 中说明。
+
 ## QQ 开源项目审核表
 
 | Project | URL | License | Active | Usage | Copy Code? | Risk | Decision |

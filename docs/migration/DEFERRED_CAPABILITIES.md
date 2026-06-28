@@ -4,6 +4,8 @@
 
 迁移允许内部里程碑分阶段完成，但最终对外发布必须具备原项目完整能力。任何延期功能都必须在这里追踪，不允许无记录丢弃。
 
+`docs/migration/plans/11-final-baseline-parity.md` 是当前最终 parity 收口计划。本文只允许记录可隔离的边缘能力、已锁定隐藏入口或已锁定移除项；不能把发布前必须完成的主链路能力整体放进 deferred。
+
 ## 状态定义
 
 - `active`：当前迁移阶段要完成。
@@ -31,3 +33,7 @@
 - 发布前所有 `deferred` 项必须变成 `done`、`hidden` 或 `removed-by-decision`。
 - `removed-by-decision` 必须来自用户明确同意。
 - 视觉、播放、provider、桌面歌词、updater、license gate 不能作为整体延期项。
+- 发布前不能整体延期：启动/Home shell、搜索、播放、队列、歌词、provider adapter、Netease/QQ 核心接口、视觉 parity、3D 歌单架、桌面歌词、Windows 安装/卸载、Tauri updater/release path、license/notices gate。
+- 发布前允许保持非 `done` 的只有已锁定处置项：A7 的 Wallpaper Engine 深联动 / 实验壁纸模式 / hand-canvas 为 `hidden`，旧 Electron patch JSON / 旧用户数据自动迁移为 `removed-by-decision`。
+- `QQ 独立 sidecar` 只是进程边界决策，不是 QQ provider 功能延期；发布前必须决定继续单 Bun sidecar、拆独立 sidecar，或将该项改为 `removed-by-decision`，但 QQ search/songUrl/lyric/playlistDetail/loginStatus/logout parity 仍必须由 capability gate 验收。
+- `Tauri 发布 logo / 最终品牌名` 如继续与 DECISIONS.md A1/A2 保持一致，应在发布前改为 `done`；不得因品牌项未更新而阻塞或改变已锁 app id/productName/logo 决策。

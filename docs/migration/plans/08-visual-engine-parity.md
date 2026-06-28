@@ -10,8 +10,24 @@
 
 ---
 
+## Current Status And Execution Note
+
+This plan is now a subsystem reference, not the current implementation entry point. The latest audit is tracked in `docs/migration/plans/11-final-baseline-parity.md`; new visual work must enter through Phase 3 of that plan, or through a smaller child plan derived from it.
+
+Current review findings that must not be treated as complete:
+
+- HomeVisual is partial: the current migrated path is still short of the baseline cover/depth/edge/ripple/back-cover/float/skull/gesture/free-camera chain.
+- Splash visual parity is close, but the baseline intro sound path is missing.
+- Stage lyrics still carry word-data and timing risk: word timing/duration/charCount are not yet proven end-to-end, and render-loop time units may diverge from baseline animation math.
+- `connectorParticles` is still a skeleton relative to baseline particle attributes, placement, color, randomness, and mount conditions.
+- 3D shelf parity still has data-source and resize gaps: provider/user playlist sources, detail behavior, interaction feedback, camera/projection resize, and WebView2 visual evidence remain open.
+
+Do not check any capability gate from this plan alone. Final visual parity closure belongs to `11-final-baseline-parity.md` Phase 3 and final sign-off belongs to Phase 6.
+
 ## Required Reading
 
+- `docs/migration/EXECUTION_PROTOCOL.md`
+- `docs/migration/plans/11-final-baseline-parity.md`
 - `docs/GLASS_SVG_TEXTURE.md`
 - `docs/migration/baseline/BASELINE_CAPTURE.md`
 - `docs/migration/CAPABILITY_PARITY_CHECKLIST.md`
@@ -22,6 +38,7 @@
 - Baseline captures exist.
 - Playback state exists.
 - React visual host exists.
+- `docs/migration/plans/11-final-baseline-parity.md` Phase 3 is being used as the active execution plan.
 
 ## Files
 
@@ -96,6 +113,8 @@ Use identical size, visual archive and test track.
 - [ ] **Step 4: Compare recordings**
 
 Manually compare timing and hand feel.
+
+Do not use code inspection as parity evidence for the audited gaps above. Splash sound, HomeVisual, stage lyrics, connector particles, shelf data/interaction, and resize/camera behavior require WebView2 and Electron baseline comparison artifacts before any release gate can close.
 
 ## Task 4: Verification
 

@@ -22,7 +22,7 @@
 | 编号 | 决策项 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | B1 | 账号登录凭证 | 用户提供（待注入） | 真实登录/高音质 songUrl 测试用。P4.5/P7 仅做匿名可用路径，`loginStatus/logout` 留 gate；账号测试期由用户私下注入 cookie/QR，不写入仓库 |
-| B2 | 签名证书 / 发布密钥 | 不签名 | Tauri updater 资产本次不签名（`TAURI_SIGNING_PRIVATE_KEY` 不配置）；Windows 安装器不代码签名。公开发布前若需签名/校验由用户单独提供密钥 |
+| B2 | 签名证书 / 发布密钥 | 不签名 | Tauri updater 资产本次不签名（`TAURI_SIGNING_PRIVATE_KEY` 不配置）；Windows 安装器不代码签名。公开发布前若需签名/校验由用户单独提供密钥。本决策不自动关闭 updater 安装 gate：Tauri updater manifest、签名字段、公钥配置、release artifacts 和 detection-only UI/文案关系仍需在 `LICENSE_GATE.md` / release gate 里收口 |
 | B3 | updater 仓库/外部服务权限 | `github.com/zzstar101/Mineradio` | updater `endpoints` 指向新仓库 Releases；release 上传权限由用户在新仓库配置 |
 | B4 | 破坏性清理 | 允许 | 已删 `package-lock.json`。可按迁移计划归档/删除旧 Electron 打包产物等不再使用的文件，但 `public/`、`desktop/`、`server.js` 在 parity 验证完成前仍作 baseline 参考保留 |
 
