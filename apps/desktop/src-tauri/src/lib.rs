@@ -3,7 +3,7 @@ mod paths;
 mod sidecar;
 mod updater;
 
-use std::sync::Mutex;
+use std::{process::Child, sync::Mutex};
 
 #[derive(serde::Serialize, Clone)]
 pub struct RuntimeConfig {
@@ -17,6 +17,51 @@ pub struct RuntimeConfig {
 pub struct DesktopLyricsRuntimeState {
     pub latest_payload: Option<serde_json::Value>,
     pub click_through: bool,
+    pub hot_bounds: Option<commands::DesktopLyricsHotBounds>,
+    pub last_middle_at_ms: u64,
+    pub poller_running: bool,
+    pub poller_starting: bool,
+    pub poller_desired: bool,
+    pub poller_child: Option<DesktopLyricsPollerChild>,
+}
+
+pub struct DesktopLyricsPollerChild {
+    child: Option<Child>,
+}
+
+impl DesktopLyricsPollerChild {
+    pub fn new(child: Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    #[cfg(test)]
+    pub fn empty_for_test() -> Self {
+        Self { child: None }
+    }
+
+    pub fn terminate(mut self) -> Result<(), String> {
+        let Some(mut child) = self.child.take() else {
+            return Ok(());
+        };
+        let kill_result = child.kill();
+        let wait_result = child.wait();
+        match (kill_result, wait_result) {
+            (_, Ok(_)) => Ok(()),
+            (Ok(_), Err(wait_err)) => Err(wait_err.to_string()),
+            (Err(kill_err), Err(wait_err)) => {
+                Err(format!("kill failed: {}; wait failed: {}", kill_err, wait_err))
+            }
+        }
+    }
+}
+
+impl Drop for DesktopLyricsPollerChild {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
 }
 
 pub struct AppState {
@@ -41,6 +86,12 @@ impl AppState {
             desktop_lyrics: Mutex::new(DesktopLyricsRuntimeState {
                 latest_payload: None,
                 click_through: true,
+                hot_bounds: None,
+                last_middle_at_ms: 0,
+                poller_running: false,
+                poller_starting: false,
+                poller_desired: false,
+                poller_child: None,
             }),
         }
     }
@@ -81,6 +132,7 @@ pub fn run() {
             commands::desktop_lyrics_close_window,
             commands::desktop_lyrics_set_click_through,
             commands::desktop_lyrics_move_by,
+            commands::desktop_lyrics_set_hot_bounds,
             commands::desktop_lyrics_update_payload,
             commands::desktop_lyrics_overlay_ready
         ])
@@ -131,5 +183,11 @@ mod tests {
         let lyrics = s.desktop_lyrics.lock().expect("desktop lyrics state");
         assert!(lyrics.latest_payload.is_none());
         assert!(lyrics.click_through);
+        assert!(lyrics.hot_bounds.is_none());
+        assert_eq!(lyrics.last_middle_at_ms, 0);
+        assert!(!lyrics.poller_running);
+        assert!(!lyrics.poller_starting);
+        assert!(!lyrics.poller_desired);
+        assert!(lyrics.poller_child.is_none());
     }
 }

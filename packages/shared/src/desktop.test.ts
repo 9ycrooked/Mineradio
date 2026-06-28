@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { DesktopLyricsPayloadSchema, DESKTOP_LYRICS_FPS_VALUES } from "./desktop";
+import {
+	DesktopLyricsHotBoundsSchema,
+	DesktopLyricsPayloadSchema,
+	DESKTOP_LYRICS_FPS_VALUES
+} from "./desktop";
 
 test("desktop lyrics payload applies safe defaults for a minimal payload", () => {
 	const parsed = DesktopLyricsPayloadSchema.parse({
@@ -61,4 +65,36 @@ test("desktop lyrics payload keeps colors and click-through knobs shared across 
 	expect(parsed.colors.secondary).toBe("#ffd166");
 	expect(parsed.clickThrough).toBe(false);
 	expect(parsed.font.fit.maxLines).toBe(2);
+});
+
+test("desktop lyrics hot bounds clamps relative rectangle and preserves ordering", () => {
+	const parsed = DesktopLyricsHotBoundsSchema.parse({
+		left: -5000,
+		top: 20.4,
+		right: -4999,
+		bottom: 20.6
+	});
+
+	expect(parsed).toEqual({
+		left: -2000,
+		top: 20,
+		right: -1999,
+		bottom: 21
+	});
+});
+
+test("desktop lyrics hot bounds falls back to a one pixel rectangle for invalid input", () => {
+	const parsed = DesktopLyricsHotBoundsSchema.parse({
+		left: Number.NaN,
+		top: Number.POSITIVE_INFINITY,
+		right: Number.NEGATIVE_INFINITY,
+		bottom: "bad"
+	});
+
+	expect(parsed).toEqual({
+		left: 0,
+		top: 0,
+		right: 1,
+		bottom: 1
+	});
 });

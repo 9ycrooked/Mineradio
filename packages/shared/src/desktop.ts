@@ -12,6 +12,14 @@ const ClampedNumberSchema = (min: number, max: number, fallback: number) =>
 		.transform((value) => clamp(value, min, max))
 		.default(fallback);
 
+const HotBoundNumberSchema = (fallback: number) =>
+	z
+		.number()
+		.finite()
+		.catch(fallback)
+		.transform((value) => Math.round(clamp(value, -2000, 6000)))
+		.default(fallback);
+
 export const DesktopLyricsColorsSchema = z.object({
 	primary: z.string().min(1).default("#ffffff"),
 	secondary: z.string().min(1).default("#9fe7ff"),
@@ -56,6 +64,24 @@ export const DesktopLyricsMotionSchema = z.object({
 	smoothingMs: ClampedNumberSchema(0, 2000, 120)
 });
 
+export const DesktopLyricsHotBoundsSchema = z
+	.object({
+		left: HotBoundNumberSchema(0),
+		top: HotBoundNumberSchema(0),
+		right: HotBoundNumberSchema(1),
+		bottom: HotBoundNumberSchema(1)
+	})
+	.transform((bounds) => {
+		const right = Math.max(bounds.left + 1, bounds.right);
+		const bottom = Math.max(bounds.top + 1, bounds.bottom);
+		return {
+			left: bounds.left,
+			top: bounds.top,
+			right,
+			bottom
+		};
+	});
+
 export const DesktopLyricsPayloadSchema = z.object({
 	enabled: z.boolean().default(false),
 	text: z.string().default(""),
@@ -69,3 +95,4 @@ export const DesktopLyricsPayloadSchema = z.object({
 });
 
 export type DesktopLyricsPayload = z.infer<typeof DesktopLyricsPayloadSchema>;
+export type DesktopLyricsHotBounds = z.infer<typeof DesktopLyricsHotBoundsSchema>;

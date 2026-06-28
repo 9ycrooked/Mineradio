@@ -3,10 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import {
 	DesktopLyricsOverlay,
+	areDesktopLyricsHotBoundsEqual,
 	computeDesktopLyricsStyle,
+	computeDesktopLyricsHotBounds,
 	createDesktopLyricsPointerHandlers,
 	normalizeDesktopLyricsPayload,
+	reportDesktopLyricsHotBounds,
 	shouldRenderDesktopLyrics,
+	shouldReportDesktopLyricsHotBounds,
 	type DesktopLyricsDragCallbacks
 } from "./DesktopLyricsOverlay";
 
@@ -98,4 +102,65 @@ test("DesktopLyricsOverlay does not pretend locked click-through can be unlocked
 
 	props.onPointerDown({ button: 1, clientX: 10, clientY: 20, pointerId: 1, currentTarget: { setPointerCapture: () => {} } });
 	expect(lockToggles).toBe(0);
+});
+
+test("computeDesktopLyricsHotBounds normalizes DOMRect geometry for native polling", () => {
+	const bounds = computeDesktopLyricsHotBounds({
+		left: 10.2,
+		top: 20.6,
+		right: 209.8,
+		bottom: 81.2
+	});
+
+	expect(bounds).toEqual({
+		left: 10,
+		top: 21,
+		right: 210,
+		bottom: 81
+	});
+});
+
+test("reportDesktopLyricsHotBounds skips hidden nodes and sends visible bounds", async () => {
+	const sent: unknown[] = [];
+	const bridge = {
+		async setHotBounds(bounds: unknown) {
+			sent.push(bounds);
+		}
+	};
+	const hidden = {
+		getBoundingClientRect() {
+			return { left: 0, top: 0, right: 0, bottom: 40 };
+		}
+	};
+	const visible = {
+		getBoundingClientRect() {
+			return { left: 4.2, top: 5.8, right: 180.1, bottom: 45.2 };
+		}
+	};
+
+	await reportDesktopLyricsHotBounds(hidden as HTMLElement, bridge);
+	await reportDesktopLyricsHotBounds(visible as HTMLElement, bridge);
+
+	expect(sent).toEqual([
+		{ left: 4, top: 6, right: 180, bottom: 45 }
+	]);
+});
+
+test("areDesktopLyricsHotBoundsEqual compares measured geometry", () => {
+	expect(areDesktopLyricsHotBoundsEqual(
+		{ left: 4, top: 6, right: 180, bottom: 45 },
+		{ left: 4, top: 6, right: 180, bottom: 45 }
+	)).toBe(true);
+	expect(areDesktopLyricsHotBoundsEqual(
+		{ left: 4, top: 6, right: 180, bottom: 45 },
+		{ left: 4, top: 6, right: 181, bottom: 45 }
+	)).toBe(false);
+	expect(areDesktopLyricsHotBoundsEqual(null, { left: 4, top: 6, right: 180, bottom: 45 })).toBe(false);
+});
+
+test("shouldReportDesktopLyricsHotBounds only reports geometry changes", () => {
+	const previous = { left: 4, top: 6, right: 180, bottom: 45 };
+	expect(shouldReportDesktopLyricsHotBounds(null, previous)).toBe(true);
+	expect(shouldReportDesktopLyricsHotBounds(previous, { left: 4, top: 6, right: 180, bottom: 45 })).toBe(false);
+	expect(shouldReportDesktopLyricsHotBounds(previous, { left: 4, top: 6, right: 181, bottom: 45 })).toBe(true);
 });

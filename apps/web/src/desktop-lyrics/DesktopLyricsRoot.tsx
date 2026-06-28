@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import type { DesktopLyricsPayload } from "@mineradio/shared";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DesktopLyricsHotBounds, DesktopLyricsPayload } from "@mineradio/shared";
 import { DesktopLyricsOverlay } from "./DesktopLyricsOverlay";
 import { desktopLyricsBridge, type DesktopLyricsBridge } from "./desktop-lyrics-bridge";
 import "./DesktopLyricsOverlay.css";
@@ -91,6 +91,9 @@ export function createDesktopLyricsOverlayActions(
 				}
 			}));
 			void bridge.moveBy(dx, dy);
+		},
+		onHotBoundsChange(bounds: DesktopLyricsHotBounds) {
+			void bridge.setHotBounds(bounds);
 		}
 	};
 }
@@ -98,18 +101,33 @@ export function createDesktopLyricsOverlayActions(
 export function DesktopLyricsRoot({ bridge = desktopLyricsBridge }: DesktopLyricsRootProps) {
 	const initial = useMemo(() => DEFAULT_PAYLOAD, []);
 	const [payload, setPayload] = useState<Partial<DesktopLyricsPayload>>(initial);
+	const payloadRef = useRef<Partial<DesktopLyricsPayload>>(initial);
+
+	useEffect(() => {
+		payloadRef.current = payload;
+	}, [payload]);
 
 	useEffect(() => {
 		return subscribeDesktopLyricsBridge(bridge, setPayload);
 	}, [bridge]);
 
-	const actions = createDesktopLyricsOverlayActions(bridge, () => payload, setPayload);
+	const actions = useMemo(
+		() => createDesktopLyricsOverlayActions(bridge, () => payloadRef.current, setPayload),
+		[bridge]
+	);
+	const handleToggleLock = useCallback(() => actions.onToggleLock(), [actions]);
+	const handleMoveBy = useCallback((dx: number, dy: number) => actions.onMoveBy(dx, dy), [actions]);
+	const handleHotBoundsChange = useCallback(
+		(bounds: DesktopLyricsHotBounds) => actions.onHotBoundsChange(bounds),
+		[actions]
+	);
 
 	return (
 		<DesktopLyricsOverlay
 			payload={payload}
-			onToggleLock={actions.onToggleLock}
-			onMoveBy={actions.onMoveBy}
+			onToggleLock={handleToggleLock}
+			onMoveBy={handleMoveBy}
+			onHotBoundsChange={handleHotBoundsChange}
 		/>
 	);
 }

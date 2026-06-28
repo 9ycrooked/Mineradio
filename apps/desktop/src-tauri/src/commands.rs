@@ -4,10 +4,19 @@
 //! phase; real dialog/filesystem wiring arrives in a later release-bundling
 //! phase (see docs/migration/plans/05-tauri-runtime.md).
 
-use crate::AppState;
-use tauri::{Emitter, Manager, PhysicalPosition, Position, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use crate::{AppState, DesktopLyricsPollerChild, DesktopLyricsRuntimeState};
+use serde::{Deserialize, Serialize};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{
+    Emitter, Manager, PhysicalPosition, Position, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 const DESKTOP_LYRICS_MAX_MOVE_DELTA: f64 = 4096.0;
+const DESKTOP_LYRICS_DEFAULT_WIDTH: i32 = 760;
+const DESKTOP_LYRICS_DEFAULT_HEIGHT: i32 = 120;
+const DESKTOP_LYRICS_MIDDLE_CLICK_DEBOUNCE_MS: u64 = 260;
 
 pub mod labels {
     pub const MAIN: &str = "main";
@@ -36,14 +45,239 @@ pub struct DesktopLyricsLockIntent {
     pub ignore_cursor_events: bool,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesktopLyricsHotBounds {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesktopLyricsScreenBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesktopLyricsNativeMiddleClickState {
+    pub enabled: bool,
+    pub click_through: bool,
+    pub hot_bounds: Option<DesktopLyricsHotBounds>,
+    pub last_middle_at_ms: u64,
+}
+
 pub fn desktop_lyrics_lock_intent(click_through: bool) -> DesktopLyricsLockIntent {
-	DesktopLyricsLockIntent {
-		ignore_cursor_events: click_through,
-	}
+    DesktopLyricsLockIntent {
+        ignore_cursor_events: click_through,
+    }
 }
 
 pub fn desktop_lyrics_default_click_through() -> bool {
-	true
+    true
+}
+
+fn clamp_hot_bound(value: f64, fallback: i32) -> i32 {
+    if !value.is_finite() {
+        return fallback;
+    }
+    (value.round() as i32).clamp(-2000, 6000)
+}
+
+pub fn desktop_lyrics_relative_hot_bounds(
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+) -> DesktopLyricsHotBounds {
+    let left = clamp_hot_bound(left, 0);
+    let top = clamp_hot_bound(top, 0);
+    let right = clamp_hot_bound(right, 1).max(left + 1);
+    let bottom = clamp_hot_bound(bottom, 1).max(top + 1);
+    DesktopLyricsHotBounds {
+        left,
+        top,
+        right,
+        bottom,
+    }
+}
+
+pub fn desktop_lyrics_scale_hot_bounds(
+    bounds: DesktopLyricsHotBounds,
+    scale_factor: f64,
+) -> DesktopLyricsHotBounds {
+    let scale = if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    };
+    desktop_lyrics_relative_hot_bounds(
+        bounds.left as f64 * scale,
+        bounds.top as f64 * scale,
+        bounds.right as f64 * scale,
+        bounds.bottom as f64 * scale,
+    )
+}
+
+#[allow(dead_code)]
+pub fn desktop_lyrics_hot_bounds_on_screen(
+    window_position: (i32, i32),
+    hot_bounds: Option<DesktopLyricsHotBounds>,
+) -> DesktopLyricsScreenBounds {
+    match hot_bounds {
+        Some(bounds) => DesktopLyricsScreenBounds {
+            x: window_position.0 + bounds.left,
+            y: window_position.1 + bounds.top,
+            width: (bounds.right - bounds.left).max(1),
+            height: (bounds.bottom - bounds.top).max(1),
+        },
+        None => DesktopLyricsScreenBounds {
+            x: window_position.0,
+            y: window_position.1,
+            width: DESKTOP_LYRICS_DEFAULT_WIDTH,
+            height: DESKTOP_LYRICS_DEFAULT_HEIGHT,
+        },
+    }
+}
+
+#[allow(dead_code)]
+pub fn desktop_lyrics_point_in_bounds(
+    point: (i32, i32),
+    bounds: DesktopLyricsScreenBounds,
+) -> bool {
+    point.0 >= bounds.x
+        && point.0 <= bounds.x + bounds.width
+        && point.1 >= bounds.y
+        && point.1 <= bounds.y + bounds.height
+}
+
+#[allow(dead_code)]
+pub fn desktop_lyrics_handle_middle_click(
+    state: &mut DesktopLyricsNativeMiddleClickState,
+    now_ms: u64,
+    cursor_screen_point: (i32, i32),
+    window_position: (i32, i32),
+) -> Option<bool> {
+    if !state.enabled {
+        return None;
+    }
+    if now_ms.saturating_sub(state.last_middle_at_ms) < DESKTOP_LYRICS_MIDDLE_CLICK_DEBOUNCE_MS {
+        return None;
+    }
+    let bounds = desktop_lyrics_hot_bounds_on_screen(window_position, state.hot_bounds);
+    if !desktop_lyrics_point_in_bounds(cursor_screen_point, bounds) {
+        return None;
+    }
+    state.last_middle_at_ms = now_ms;
+    state.click_through = !state.click_through;
+    Some(state.click_through)
+}
+
+pub fn desktop_lyrics_parse_poller_line(line: &str) -> Option<(i32, i32)> {
+    let mut parts = line.split_whitespace();
+    if parts.next()? != "MMB" {
+        return None;
+    }
+    let x = parts.next()?.parse::<i32>().ok()?;
+    let y = parts.next()?.parse::<i32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((x, y))
+}
+
+pub fn desktop_lyrics_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
+}
+
+#[allow(dead_code)]
+fn desktop_lyrics_native_middle_click_state(
+    lyrics: &DesktopLyricsRuntimeState,
+) -> DesktopLyricsNativeMiddleClickState {
+    DesktopLyricsNativeMiddleClickState {
+        enabled: true,
+        click_through: lyrics.click_through,
+        hot_bounds: lyrics.hot_bounds,
+        last_middle_at_ms: lyrics.last_middle_at_ms,
+    }
+}
+
+#[allow(dead_code)]
+fn store_desktop_lyrics_native_middle_click_state(
+    lyrics: &mut DesktopLyricsRuntimeState,
+    native: DesktopLyricsNativeMiddleClickState,
+) {
+    lyrics.click_through = native.click_through;
+    lyrics.hot_bounds = native.hot_bounds;
+    lyrics.last_middle_at_ms = native.last_middle_at_ms;
+}
+
+pub fn desktop_lyrics_start_middle_click_poller_state(
+    lyrics: &mut DesktopLyricsRuntimeState,
+    child: Option<DesktopLyricsPollerChild>,
+) -> bool {
+    if lyrics.poller_running || lyrics.poller_starting || lyrics.poller_child.is_some() {
+        return false;
+    }
+    lyrics.poller_desired = true;
+    if child.is_none() {
+        lyrics.poller_starting = true;
+        return true;
+    }
+    lyrics.poller_running = true;
+    lyrics.poller_starting = false;
+    lyrics.poller_child = child;
+    true
+}
+
+pub fn desktop_lyrics_finish_middle_click_poller_start_state(
+    lyrics: &mut DesktopLyricsRuntimeState,
+    child: DesktopLyricsPollerChild,
+) -> Option<DesktopLyricsPollerChild> {
+    lyrics.poller_starting = false;
+    if !lyrics.poller_desired || lyrics.poller_running || lyrics.poller_child.is_some() {
+        return Some(child);
+    }
+    lyrics.poller_running = true;
+    lyrics.poller_child = Some(child);
+    None
+}
+
+pub fn desktop_lyrics_cancel_middle_click_poller_start_state(
+    lyrics: &mut DesktopLyricsRuntimeState,
+) {
+    lyrics.poller_starting = false;
+}
+
+pub fn desktop_lyrics_stop_middle_click_poller_state(
+    lyrics: &mut DesktopLyricsRuntimeState,
+) -> (bool, Option<DesktopLyricsPollerChild>) {
+    let was_running = lyrics.poller_running || lyrics.poller_starting || lyrics.poller_child.is_some();
+    let child = lyrics.poller_child.take();
+    lyrics.poller_running = false;
+    lyrics.poller_starting = false;
+    lyrics.poller_desired = false;
+    (was_running, child)
+}
+
+fn desktop_lyrics_terminate_poller_child(
+    child: Option<DesktopLyricsPollerChild>,
+) -> bool {
+    let Some(child) = child else {
+        return false;
+    };
+    if let Err(e) = child.terminate() {
+        eprintln!("desktop lyrics poller terminate failed: {}", e);
+    }
+    true
 }
 
 pub fn desktop_lyrics_position_delta(dx: f64, dy: f64) -> Result<(i32, i32), String> {
@@ -88,14 +322,14 @@ fn desktop_lyrics_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
 }
 
 fn ensure_desktop_lyrics_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
-	if let Some(win) = desktop_lyrics_window(app) {
-		return Ok(win);
-	}
+    if let Some(win) = desktop_lyrics_window(app) {
+        return Ok(win);
+    }
 
-	let win = WebviewWindowBuilder::new(
-		app,
-		labels::DESKTOP_LYRICS,
-		WebviewUrl::App(desktop_lyrics_window_url().into()),
+    let win = WebviewWindowBuilder::new(
+        app,
+        labels::DESKTOP_LYRICS,
+        WebviewUrl::App(desktop_lyrics_window_url().into()),
     )
     .title("Mineradio Desktop Lyrics")
     .transparent(true)
@@ -104,12 +338,12 @@ fn ensure_desktop_lyrics_window(app: &tauri::AppHandle) -> Result<WebviewWindow,
     .resizable(false)
     .inner_size(760.0, 120.0)
     .position(80.0, 80.0)
-	.skip_taskbar(true)
-	.build()
-	.map_err(|e| e.to_string())?;
-	win.set_ignore_cursor_events(desktop_lyrics_default_click_through())
-		.map_err(|e| e.to_string())?;
-	Ok(win)
+    .skip_taskbar(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+    win.set_ignore_cursor_events(desktop_lyrics_default_click_through())
+        .map_err(|e| e.to_string())?;
+    Ok(win)
 }
 
 #[tauri::command]
@@ -190,21 +424,31 @@ pub fn desktop_lyrics_show_window(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-	let win = ensure_desktop_lyrics_window(&app)?;
+    let win = ensure_desktop_lyrics_window(&app)?;
     let click_through = desktop_lyrics_show_click_through_state();
     {
         let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
         lyrics.click_through = click_through;
     }
-	win.set_ignore_cursor_events(click_through)
-		.map_err(|e| e.to_string())?;
-	win.show().map_err(|e| e.to_string())?;
-	win.set_focus().map_err(|e| e.to_string())?;
-	Ok(())
+    desktop_lyrics_start_middle_click_poller(app.clone(), state)?;
+    win.set_ignore_cursor_events(click_through)
+        .map_err(|e| e.to_string())?;
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn desktop_lyrics_close_window(app: tauri::AppHandle) -> Result<(), String> {
+pub fn desktop_lyrics_close_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    {
+        let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
+        let (_, child) = desktop_lyrics_stop_middle_click_poller_state(&mut lyrics);
+        drop(lyrics);
+        desktop_lyrics_terminate_poller_child(child);
+    }
     if let Some(win) = desktop_lyrics_window(&app) {
         win.close().map_err(|e| e.to_string())?;
     }
@@ -218,6 +462,7 @@ pub fn desktop_lyrics_set_click_through(
     click_through: bool,
 ) -> Result<(), String> {
     let win = ensure_desktop_lyrics_window(&app)?;
+    desktop_lyrics_start_middle_click_poller(app.clone(), state.clone())?;
     {
         let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
         lyrics.click_through = click_through;
@@ -231,15 +476,189 @@ pub fn desktop_lyrics_set_click_through(
 }
 
 #[tauri::command]
+pub fn desktop_lyrics_set_hot_bounds(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    bounds: DesktopLyricsHotBounds,
+) -> Result<(), String> {
+    let logical = desktop_lyrics_relative_hot_bounds(
+        bounds.left.into(),
+        bounds.top.into(),
+        bounds.right.into(),
+        bounds.bottom.into(),
+    );
+    let scale_factor = desktop_lyrics_window(&app)
+        .and_then(|win| win.scale_factor().ok())
+        .unwrap_or(1.0);
+    let normalized = desktop_lyrics_scale_hot_bounds(logical, scale_factor);
+    let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
+    lyrics.hot_bounds = Some(normalized);
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn desktop_lyrics_native_middle_click_toggle(
+    lyrics: &mut DesktopLyricsRuntimeState,
+    now_ms: u64,
+    cursor_screen_point: (i32, i32),
+    window_position: (i32, i32),
+) -> Option<bool> {
+    desktop_lyrics_apply_native_middle_click_event(
+        lyrics,
+        now_ms,
+        cursor_screen_point,
+        window_position,
+    )
+}
+
+pub fn desktop_lyrics_apply_native_middle_click_event(
+    lyrics: &mut DesktopLyricsRuntimeState,
+    now_ms: u64,
+    cursor_screen_point: (i32, i32),
+    window_position: (i32, i32),
+) -> Option<bool> {
+    let mut native = desktop_lyrics_native_middle_click_state(lyrics);
+    let result = desktop_lyrics_handle_middle_click(
+        &mut native,
+        now_ms,
+        cursor_screen_point,
+        window_position,
+    );
+    store_desktop_lyrics_native_middle_click_state(lyrics, native);
+    result
+}
+
+fn desktop_lyrics_apply_native_middle_click_to_window(
+    app: &tauri::AppHandle,
+    cursor_screen_point: (i32, i32),
+) -> Result<Option<bool>, String> {
+    let Some(win) = desktop_lyrics_window(app) else {
+        return Ok(None);
+    };
+    let position = win.outer_position().map_err(|e| e.to_string())?;
+    let next = {
+        let state = app.state::<AppState>();
+        let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
+        desktop_lyrics_apply_native_middle_click_event(
+            &mut lyrics,
+            desktop_lyrics_now_ms(),
+            cursor_screen_point,
+            (position.x, position.y),
+        )
+    };
+    if let Some(click_through) = next {
+        win.set_ignore_cursor_events(click_through)
+            .map_err(|e| e.to_string())?;
+        win.emit("desktop-lyrics-lock-changed", click_through)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(next)
+}
+
+#[cfg(target_os = "windows")]
+fn desktop_lyrics_spawn_middle_click_poller(app: tauri::AppHandle) -> Result<Child, String> {
+    let script = r#"
+$ErrorActionPreference = "SilentlyContinue"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class MineradioMousePoll {
+  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT lpPoint);
+  public struct POINT { public int X; public int Y; }
+}
+"@
+$prev = $false
+while ($true) {
+  $down = (([MineradioMousePoll]::GetAsyncKeyState(4) -band 0x8000) -ne 0)
+  if ($down -and -not $prev) {
+    $pt = New-Object MineradioMousePoll+POINT
+    if ([MineradioMousePoll]::GetCursorPos([ref]$pt)) {
+      [Console]::Out.WriteLine("MMB {0} {1}" -f $pt.X, $pt.Y)
+      [Console]::Out.Flush()
+    }
+  }
+  $prev = $down
+  Start-Sleep -Milliseconds 24
+}
+"#;
+    let mut child = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                let Some(point) = desktop_lyrics_parse_poller_line(&line) else {
+                    continue;
+                };
+                let _ = desktop_lyrics_apply_native_middle_click_to_window(&app, point);
+            }
+        });
+    }
+
+    Ok(child)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn desktop_lyrics_spawn_middle_click_poller(_app: tauri::AppHandle) -> Result<Child, String> {
+    Err("DESKTOP_LYRICS_POLLER_UNSUPPORTED".into())
+}
+
+fn desktop_lyrics_start_middle_click_poller(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        let _ = state;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
+        if !desktop_lyrics_start_middle_click_poller_state(&mut lyrics, None) {
+            return Ok(());
+        }
+    }
+
+    let child = match desktop_lyrics_spawn_middle_click_poller(app) {
+        Ok(child) => DesktopLyricsPollerChild::new(child),
+        Err(e) => {
+            let mut lyrics = state.desktop_lyrics.lock().map_err(|lock_err| lock_err.to_string())?;
+            desktop_lyrics_cancel_middle_click_poller_start_state(&mut lyrics);
+            return Err(e);
+        }
+    };
+    let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
+    let orphan = desktop_lyrics_finish_middle_click_poller_start_state(&mut lyrics, child);
+    drop(lyrics);
+    desktop_lyrics_terminate_poller_child(orphan);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn desktop_lyrics_move_by(app: tauri::AppHandle, dx: f64, dy: f64) -> Result<(), String> {
     let win = ensure_desktop_lyrics_window(&app)?;
     let current = win.outer_position().map_err(|e| e.to_string())?;
     let (x, y) = desktop_lyrics_next_position(current.x, current.y, dx, dy)?;
-    win.set_position(Position::Physical(PhysicalPosition {
-        x,
-        y,
-    }))
-    .map_err(|e| e.to_string())?;
+    win.set_position(Position::Physical(PhysicalPosition { x, y }))
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -254,6 +673,7 @@ pub fn desktop_lyrics_update_payload(
         lyrics.latest_payload = Some(payload.clone());
     }
     let win = ensure_desktop_lyrics_window(&app)?;
+    desktop_lyrics_start_middle_click_poller(app.clone(), state)?;
     win.emit("desktop-lyrics-payload", payload)
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -284,6 +704,19 @@ pub fn desktop_lyrics_overlay_ready(
 mod tests {
     use super::*;
 
+    fn test_desktop_lyrics_runtime_state() -> DesktopLyricsRuntimeState {
+        DesktopLyricsRuntimeState {
+            latest_payload: None,
+            click_through: true,
+            hot_bounds: None,
+            last_middle_at_ms: 0,
+            poller_running: false,
+            poller_starting: false,
+            poller_desired: false,
+            poller_child: None,
+        }
+    }
+
     #[test]
     fn openable_url_accepts_http_and_https() {
         assert!(is_openable_url("http://example.com"));
@@ -308,15 +741,18 @@ mod tests {
     }
 
     #[test]
-	fn desktop_lyrics_lock_intent_maps_to_ignore_cursor_events() {
-		assert_eq!(desktop_lyrics_lock_intent(true).ignore_cursor_events, true);
-		assert_eq!(desktop_lyrics_lock_intent(false).ignore_cursor_events, false);
-	}
+    fn desktop_lyrics_lock_intent_maps_to_ignore_cursor_events() {
+        assert_eq!(desktop_lyrics_lock_intent(true).ignore_cursor_events, true);
+        assert_eq!(
+            desktop_lyrics_lock_intent(false).ignore_cursor_events,
+            false
+        );
+    }
 
-	#[test]
-	fn desktop_lyrics_default_lock_starts_click_through() {
-		assert_eq!(desktop_lyrics_default_click_through(), true);
-	}
+    #[test]
+    fn desktop_lyrics_default_lock_starts_click_through() {
+        assert_eq!(desktop_lyrics_default_click_through(), true);
+    }
 
     #[test]
     fn desktop_lyrics_position_delta_rounds_to_physical_pixels() {
@@ -332,7 +768,10 @@ mod tests {
 
     #[test]
     fn desktop_lyrics_next_position_rejects_overflow() {
-        assert_eq!(desktop_lyrics_next_position(80, 80, 12.0, -3.0), Ok((92, 77)));
+        assert_eq!(
+            desktop_lyrics_next_position(80, 80, 12.0, -3.0),
+            Ok((92, 77))
+        );
         assert!(desktop_lyrics_next_position(i32::MAX, 0, 1.0, 0.0).is_err());
         assert!(desktop_lyrics_next_position(i32::MIN, 0, -1.0, 0.0).is_err());
     }
@@ -350,6 +789,244 @@ mod tests {
         assert_eq!(
             desktop_lyrics_show_click_through_state(),
             desktop_lyrics_default_click_through()
+        );
+    }
+
+    #[test]
+    fn desktop_lyrics_relative_hot_bounds_are_clamped_and_ordered() {
+        assert_eq!(
+            desktop_lyrics_relative_hot_bounds(-5000.0, 20.4, -4999.0, 20.6),
+            DesktopLyricsHotBounds {
+                left: -2000,
+                top: 20,
+                right: -1999,
+                bottom: 21,
+            }
+        );
+        assert_eq!(
+            desktop_lyrics_relative_hot_bounds(f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0),
+            DesktopLyricsHotBounds {
+                left: 0,
+                top: 0,
+                right: 1,
+                bottom: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn desktop_lyrics_hot_bounds_convert_to_screen_bounds() {
+        let rel = DesktopLyricsHotBounds {
+            left: 10,
+            top: 20,
+            right: 210,
+            bottom: 80,
+        };
+
+        assert_eq!(
+            desktop_lyrics_hot_bounds_on_screen((100, 200), Some(rel)),
+            DesktopLyricsScreenBounds {
+                x: 110,
+                y: 220,
+                width: 200,
+                height: 60,
+            }
+        );
+        assert_eq!(
+            desktop_lyrics_hot_bounds_on_screen((100, 200), None),
+            DesktopLyricsScreenBounds {
+                x: 100,
+                y: 200,
+                width: 760,
+                height: 120,
+            }
+        );
+    }
+
+    #[test]
+    fn desktop_lyrics_point_in_bounds_uses_inclusive_edges() {
+        let bounds = DesktopLyricsScreenBounds {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 40,
+        };
+
+        assert!(desktop_lyrics_point_in_bounds((10, 20), bounds));
+        assert!(desktop_lyrics_point_in_bounds((110, 60), bounds));
+        assert!(!desktop_lyrics_point_in_bounds((111, 60), bounds));
+        assert!(!desktop_lyrics_point_in_bounds((110, 61), bounds));
+    }
+
+    #[test]
+    fn desktop_lyrics_middle_click_toggle_debounces_and_updates_cache() {
+        let hot_bounds = DesktopLyricsHotBounds {
+            left: 10,
+            top: 20,
+            right: 210,
+            bottom: 80,
+        };
+        let mut state = DesktopLyricsNativeMiddleClickState {
+            enabled: true,
+            click_through: true,
+            hot_bounds: Some(hot_bounds),
+            last_middle_at_ms: 0,
+        };
+
+        let first = desktop_lyrics_handle_middle_click(&mut state, 1_000, (150, 250), (100, 200));
+        assert_eq!(first, Some(false));
+        assert!(!state.click_through);
+        assert_eq!(state.last_middle_at_ms, 1_000);
+
+        let debounced =
+            desktop_lyrics_handle_middle_click(&mut state, 1_200, (150, 250), (100, 200));
+        assert_eq!(debounced, None);
+        assert!(!state.click_through);
+
+        let outside = desktop_lyrics_handle_middle_click(&mut state, 1_300, (500, 500), (100, 200));
+        assert_eq!(outside, None);
+        assert!(!state.click_through);
+
+        let second = desktop_lyrics_handle_middle_click(&mut state, 1_300, (150, 250), (100, 200));
+        assert_eq!(second, Some(true));
+        assert!(state.click_through);
+        assert_eq!(state.last_middle_at_ms, 1_300);
+    }
+
+    #[test]
+    fn desktop_lyrics_middle_click_toggle_writes_runtime_state_cache() {
+        let mut lyrics = test_desktop_lyrics_runtime_state();
+        lyrics.latest_payload = Some(serde_json::json!({ "enabled": true, "text": "cached" }));
+        lyrics.hot_bounds = Some(DesktopLyricsHotBounds {
+            left: 10,
+            top: 20,
+            right: 210,
+            bottom: 80,
+        });
+
+        let toggled =
+            desktop_lyrics_native_middle_click_toggle(&mut lyrics, 2_000, (150, 250), (100, 200));
+
+        assert_eq!(toggled, Some(false));
+        assert!(!lyrics.click_through);
+        assert_eq!(lyrics.last_middle_at_ms, 2_000);
+        assert_eq!(
+            lyrics.latest_payload,
+            Some(serde_json::json!({ "enabled": true, "text": "cached" }))
+        );
+    }
+
+    #[test]
+    fn desktop_lyrics_poller_state_start_stop_is_idempotent() {
+        let mut lyrics = test_desktop_lyrics_runtime_state();
+
+        assert!(desktop_lyrics_start_middle_click_poller_state(&mut lyrics, None));
+        assert!(lyrics.poller_desired);
+        assert!(lyrics.poller_starting);
+        assert!(!lyrics.poller_running);
+        assert!(!desktop_lyrics_start_middle_click_poller_state(&mut lyrics, None));
+        assert!(lyrics.poller_starting);
+        let (was_running, child) = desktop_lyrics_stop_middle_click_poller_state(&mut lyrics);
+        assert!(was_running);
+        assert!(child.is_none());
+        assert!(!lyrics.poller_desired);
+        assert!(!lyrics.poller_starting);
+        assert!(!lyrics.poller_running);
+        let (was_running, child) = desktop_lyrics_stop_middle_click_poller_state(&mut lyrics);
+        assert!(!was_running);
+        assert!(child.is_none());
+    }
+
+    #[test]
+    fn desktop_lyrics_finish_poller_start_drops_orphan_when_stop_wins_race() {
+        let mut lyrics = test_desktop_lyrics_runtime_state();
+        assert!(desktop_lyrics_start_middle_click_poller_state(&mut lyrics, None));
+        let (was_running, child) = desktop_lyrics_stop_middle_click_poller_state(&mut lyrics);
+        assert!(was_running);
+        assert!(child.is_none());
+
+        let child = DesktopLyricsPollerChild::empty_for_test();
+        let orphan = desktop_lyrics_finish_middle_click_poller_start_state(&mut lyrics, child);
+        assert!(orphan.is_some());
+        assert!(!lyrics.poller_running);
+        assert!(lyrics.poller_child.is_none());
+    }
+
+    #[test]
+    fn desktop_lyrics_poller_line_parser_accepts_mmb_coordinates() {
+        assert_eq!(
+            desktop_lyrics_parse_poller_line("MMB 123 -45"),
+            Some((123, -45))
+        );
+        assert_eq!(desktop_lyrics_parse_poller_line("  MMB 0 9  "), Some((0, 9)));
+        assert_eq!(desktop_lyrics_parse_poller_line("MMB"), None);
+        assert_eq!(desktop_lyrics_parse_poller_line("MMB x 9"), None);
+        assert_eq!(desktop_lyrics_parse_poller_line("CLICK 1 2"), None);
+    }
+
+    #[test]
+    fn desktop_lyrics_scale_hot_bounds_converts_logical_css_to_physical() {
+        assert_eq!(
+            desktop_lyrics_scale_hot_bounds(
+                DesktopLyricsHotBounds {
+                    left: 10,
+                    top: 20,
+                    right: 210,
+                    bottom: 80,
+                },
+                1.25,
+            ),
+            DesktopLyricsHotBounds {
+                left: 13,
+                top: 25,
+                right: 263,
+                bottom: 100,
+            }
+        );
+        assert_eq!(
+            desktop_lyrics_scale_hot_bounds(
+                DesktopLyricsHotBounds {
+                    left: 10,
+                    top: 20,
+                    right: 210,
+                    bottom: 80,
+                },
+                1.5,
+            ),
+            DesktopLyricsHotBounds {
+                left: 15,
+                top: 30,
+                right: 315,
+                bottom: 120,
+            }
+        );
+    }
+
+    #[test]
+    fn desktop_lyrics_apply_native_event_toggles_runtime_lock_state() {
+        let mut lyrics = test_desktop_lyrics_runtime_state();
+        lyrics.latest_payload = Some(serde_json::json!({ "enabled": true, "text": "cached" }));
+        lyrics.hot_bounds = Some(DesktopLyricsHotBounds {
+            left: 10,
+            top: 20,
+            right: 210,
+            bottom: 80,
+        });
+        lyrics.poller_running = true;
+
+        let toggled = desktop_lyrics_apply_native_middle_click_event(
+            &mut lyrics,
+            3_000,
+            (150, 250),
+            (100, 200),
+        );
+
+        assert_eq!(toggled, Some(false));
+        assert!(!lyrics.click_through);
+        assert_eq!(lyrics.last_middle_at_ms, 3_000);
+        assert_eq!(
+            lyrics.latest_payload,
+            Some(serde_json::json!({ "enabled": true, "text": "cached" }))
         );
     }
 }

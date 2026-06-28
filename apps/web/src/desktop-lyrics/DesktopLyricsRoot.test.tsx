@@ -24,7 +24,8 @@ function createNoopBridge(): DesktopLyricsBridge {
 		},
 		async overlayReady() {},
 		async setClickThrough() {},
-		async moveBy() {}
+		async moveBy() {},
+		async setHotBounds() {}
 	};
 }
 
@@ -93,7 +94,8 @@ test("subscribeDesktopLyricsBridge applies payload and lock events", async () =>
 		},
 		async overlayReady() {},
 		async setClickThrough() {},
-		async moveBy() {}
+		async moveBy() {},
+		async setHotBounds() {}
 	};
 
 	const dispose = subscribeDesktopLyricsBridge(bridge, (setter) => {
@@ -125,7 +127,8 @@ test("subscribeDesktopLyricsBridge announces overlay ready after registering lis
 			calls.push("overlayReady");
 		},
 		async setClickThrough() {},
-		async moveBy() {}
+		async moveBy() {},
+		async setHotBounds() {}
 	};
 
 	subscribeDesktopLyricsBridge(bridge, () => {});
@@ -151,7 +154,8 @@ test("subscribeDesktopLyricsBridge waits for async listener registration before 
 			calls.push("overlayReady");
 		},
 		async setClickThrough() {},
-		async moveBy() {}
+		async moveBy() {},
+		async setHotBounds() {}
 	};
 
 	subscribeDesktopLyricsBridge(bridge, () => {});
@@ -182,7 +186,8 @@ test("subscribeDesktopLyricsBridge cancels overlay ready after cleanup", async (
 			calls.push("overlayReady");
 		},
 		async setClickThrough() {},
-		async moveBy() {}
+		async moveBy() {},
+		async setHotBounds() {}
 	};
 
 	const dispose = subscribeDesktopLyricsBridge(bridge, () => {});
@@ -207,7 +212,8 @@ test("subscribeDesktopLyricsBridge skips overlay ready after failed listener set
 			calls.push("overlayReady");
 		},
 		async setClickThrough() {},
-		async moveBy() {}
+		async moveBy() {},
+		async setHotBounds() {}
 	};
 
 	subscribeDesktopLyricsBridge(bridge, () => {});
@@ -231,6 +237,9 @@ test("createDesktopLyricsOverlayActions invokes Tauri lock and move commands", a
 		},
 		async moveBy(dx, dy) {
 			commands.push(["moveBy", [dx, dy]]);
+		},
+		async setHotBounds(bounds) {
+			commands.push(["setHotBounds", bounds]);
 		}
 	};
 	const actions = createDesktopLyricsOverlayActions(
@@ -243,12 +252,14 @@ test("createDesktopLyricsOverlayActions invokes Tauri lock and move commands", a
 
 	actions.onToggleLock();
 	actions.onMoveBy(12, -3);
+	actions.onHotBoundsChange({ left: 4, top: 5, right: 180, bottom: 45 });
 	await Promise.resolve();
 
 	expect(state.clickThrough).toBe(false);
 	expect(state.position).toEqual({ x: 92, y: 77 });
 	expect(commands).toEqual([
 		["setClickThrough", false],
-		["moveBy", [12, -3]]
+		["moveBy", [12, -3]],
+		["setHotBounds", { left: 4, top: 5, right: 180, bottom: 45 }]
 	]);
 });

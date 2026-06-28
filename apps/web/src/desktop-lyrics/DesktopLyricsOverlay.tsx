@@ -1,12 +1,18 @@
 import type { CSSProperties, PointerEvent } from "react";
-import React, { useRef } from "react";
-import { DesktopLyricsPayloadSchema, type DesktopLyricsPayload } from "@mineradio/shared";
+import React, { useLayoutEffect, useRef } from "react";
+import {
+	DesktopLyricsHotBoundsSchema,
+	DesktopLyricsPayloadSchema,
+	type DesktopLyricsHotBounds,
+	type DesktopLyricsPayload
+} from "@mineradio/shared";
 
 export type DesktopLyricsInput = Partial<DesktopLyricsPayload>;
 
 export interface DesktopLyricsDragCallbacks {
 	onToggleLock?: () => void;
 	onMoveBy?: (dx: number, dy: number) => void;
+	onHotBoundsChange?: (bounds: DesktopLyricsHotBounds) => void;
 }
 
 export interface DesktopLyricsOverlayProps extends DesktopLyricsDragCallbacks {
@@ -40,6 +46,52 @@ export function computeDesktopLyricsStyle(payload: DesktopLyricsPayload): Deskto
 		"--desktop-lyrics-max-font": `${payload.font.fit.maxPx}px`,
 		"--desktop-lyrics-lines": String(payload.font.fit.maxLines)
 	};
+}
+
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : useLayoutEffect;
+
+export function computeDesktopLyricsHotBounds(rect: Pick<DOMRect, "left" | "top" | "right" | "bottom">): DesktopLyricsHotBounds {
+	return DesktopLyricsHotBoundsSchema.parse({
+		left: rect.left,
+		top: rect.top,
+		right: rect.right,
+		bottom: rect.bottom
+	});
+}
+
+export async function reportDesktopLyricsHotBounds(
+	node: Pick<HTMLElement, "getBoundingClientRect"> | null | undefined,
+	bridge: Pick<DesktopLyricsDragCallbacks, "onHotBoundsChange"> | { setHotBounds?: (bounds: DesktopLyricsHotBounds) => Promise<void> | void }
+): Promise<void> {
+	if (!node) return;
+	const rect = node.getBoundingClientRect();
+	if (rect.right <= rect.left || rect.bottom <= rect.top) return;
+	const bounds = computeDesktopLyricsHotBounds(rect);
+	if ("setHotBounds" in bridge && bridge.setHotBounds) {
+		await bridge.setHotBounds(bounds);
+		return;
+	}
+	if ("onHotBoundsChange" in bridge) {
+		bridge.onHotBoundsChange?.(bounds);
+	}
+}
+
+export function areDesktopLyricsHotBoundsEqual(
+	left: DesktopLyricsHotBounds | null | undefined,
+	right: DesktopLyricsHotBounds | null | undefined
+): boolean {
+	return !!left && !!right
+		&& left.left === right.left
+		&& left.top === right.top
+		&& left.right === right.right
+		&& left.bottom === right.bottom;
+}
+
+export function shouldReportDesktopLyricsHotBounds(
+	previous: DesktopLyricsHotBounds | null | undefined,
+	next: DesktopLyricsHotBounds
+): boolean {
+	return !areDesktopLyricsHotBoundsEqual(previous, next);
 }
 
 export function createDesktopLyricsPointerHandlers(
@@ -78,11 +130,36 @@ export function createDesktopLyricsPointerHandlers(
 	};
 }
 
-export function DesktopLyricsOverlay({ payload, onToggleLock, onMoveBy }: DesktopLyricsOverlayProps) {
+export function DesktopLyricsOverlay({ payload, onToggleLock, onMoveBy, onHotBoundsChange }: DesktopLyricsOverlayProps) {
 	const normalized = normalizeDesktopLyricsPayload(payload);
 	const drag = useRef<{ x: number; y: number } | null>(null);
+	const overlayRef = useRef<HTMLDivElement | null>(null);
+	const lastHotBoundsRef = useRef<DesktopLyricsHotBounds | null>(null);
 
-	if (!shouldRenderDesktopLyrics(normalized)) {
+	const shouldRender = shouldRenderDesktopLyrics(normalized);
+
+	useIsomorphicLayoutEffect(() => {
+		if (!shouldRender) return;
+		const node = overlayRef.current;
+		if (!node) return;
+		const rect = node.getBoundingClientRect();
+		if (rect.right <= rect.left || rect.bottom <= rect.top) return;
+		const bounds = computeDesktopLyricsHotBounds(rect);
+		if (!shouldReportDesktopLyricsHotBounds(lastHotBoundsRef.current, bounds)) return;
+		lastHotBoundsRef.current = bounds;
+		onHotBoundsChange?.(bounds);
+	}, [
+		shouldRender,
+		onHotBoundsChange,
+		normalized.text,
+		normalized.position.x,
+		normalized.position.y,
+		normalized.font.fit.minPx,
+		normalized.font.fit.maxPx,
+		normalized.font.fit.maxLines
+	]);
+
+	if (!shouldRender) {
 		return null;
 	}
 
@@ -90,6 +167,7 @@ export function DesktopLyricsOverlay({ payload, onToggleLock, onMoveBy }: Deskto
 
 	return (
 		<div
+			ref={overlayRef}
 			className={[
 				"desktop-lyrics-overlay",
 				normalized.clickThrough ? "desktop-lyrics-locked" : "desktop-lyrics-unlocked"

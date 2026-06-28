@@ -1,4 +1,9 @@
-import { DesktopLyricsPayloadSchema, type DesktopLyricsPayload } from "@mineradio/shared";
+import {
+	DesktopLyricsHotBoundsSchema,
+	DesktopLyricsPayloadSchema,
+	type DesktopLyricsHotBounds,
+	type DesktopLyricsPayload
+} from "@mineradio/shared";
 import { invokeTauriCommand, listenTauriEvent, type Unlisten } from "../tauri/runtime";
 
 export interface DesktopLyricsBridge {
@@ -7,6 +12,7 @@ export interface DesktopLyricsBridge {
 	overlayReady(): Promise<void>;
 	setClickThrough(clickThrough: boolean): Promise<void>;
 	moveBy(dx: number, dy: number): Promise<void>;
+	setHotBounds(bounds: DesktopLyricsHotBounds): Promise<void>;
 }
 
 export function normalizeDesktopLyricsEventPayload(payload: unknown): DesktopLyricsPayload {
@@ -15,6 +21,10 @@ export function normalizeDesktopLyricsEventPayload(payload: unknown): DesktopLyr
 
 export function normalizeDesktopLyricsLockEvent(payload: unknown): boolean {
 	return typeof payload === "boolean" ? payload : DesktopLyricsPayloadSchema.shape.clickThrough.parse(payload);
+}
+
+export function normalizeDesktopLyricsHotBounds(bounds: unknown): DesktopLyricsHotBounds {
+	return DesktopLyricsHotBoundsSchema.parse(bounds ?? {});
 }
 
 export const desktopLyricsBridge: DesktopLyricsBridge = {
@@ -36,5 +46,10 @@ export const desktopLyricsBridge: DesktopLyricsBridge = {
 	},
 	async moveBy(dx, dy) {
 		await invokeTauriCommand("desktop_lyrics_move_by", { dx, dy });
+	},
+	async setHotBounds(bounds) {
+		await invokeTauriCommand("desktop_lyrics_set_hot_bounds", {
+			bounds: normalizeDesktopLyricsHotBounds(bounds)
+		});
 	}
 };
