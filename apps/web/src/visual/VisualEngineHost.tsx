@@ -22,6 +22,7 @@ export interface VisualEngineHostProps {
 	isPlaying: boolean;
 	queue?: Track[];
 	currentTrack?: Track | null;
+	currentCoverUrl?: string | null;
 	coverResolution?: number;
 	fxDefaults?: Partial<FxState>;
 	splashActive?: boolean;
@@ -58,6 +59,10 @@ export function syncRuntimeShelfModeOverride(
 	}
 }
 
+export function resolveVisualCoverUrl(currentCoverUrl: string | null | undefined, currentTrack: Track | null | undefined): string {
+	return currentCoverUrl ?? currentTrack?.coverUrl ?? "";
+}
+
 export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const hostRef = useRef<HTMLDivElement | null>(null);
 	const positionRef = useRef<number>(props.positionMs);
@@ -65,6 +70,8 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const lyricLinesRef = useRef<VisualLyricLine[]>(mapLyricPayload(props.lyricsPayload));
 	const shelfItemsRef = useRef<ShelfItem[]>([]);
 	const shelfItemsVersionRef = useRef<number>(0);
+	const coverUrlRef = useRef<string>(resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack));
+	const coverUrlVersionRef = useRef<number>(0);
 	const splashActiveRef = useRef<boolean>(props.splashActive ?? false);
 	const homeActiveRef = useRef<boolean>(props.homeActive ?? false);
 	const shelfModeRef = useRef<string>(props.fxDefaults?.shelf ?? "side");
@@ -94,6 +101,11 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	onShelfPlayQueueIndexRef.current = props.onShelfPlayQueueIndex;
 	onShelfDetailRowClickRef.current = props.onShelfDetailRowClick;
 	onShelfOpenDetailContentRef.current = props.onShelfOpenDetailContent;
+	const nextCoverUrl = resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack);
+	if (coverUrlRef.current !== nextCoverUrl) {
+		coverUrlRef.current = nextCoverUrl;
+		coverUrlVersionRef.current += 1;
+	}
 
 	const handleShelfModeChange = useCallback((mode: "side") => {
 		runtimeShelfModeOverrideRef.current = mode;
@@ -129,6 +141,8 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 		lyricLinesRef,
 		shelfItemsRef,
 		shelfItemsVersionRef,
+		coverUrlRef,
+		coverUrlVersionRef,
 		splashActiveRef,
 		homeActiveRef,
 		shelfModeRef,

@@ -582,6 +582,7 @@ export function App({ SplashComponent = SplashHost }: AppProps = {}): ReactEleme
 				isPlaying={isPlaying}
 				queue={queue}
 				currentTrack={currentTrack}
+				currentCoverUrl={currentTrack?.coverUrl}
 				coverResolution={1.55}
 				splashActive={splashActive}
 				homeActive={emptyHomeActive}

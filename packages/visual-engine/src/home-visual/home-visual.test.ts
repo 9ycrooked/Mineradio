@@ -143,6 +143,21 @@ test("HomeVisual.update fades particle alpha toward the visible baseline target"
 	expect(hv.getField().materialUniforms.uAlpha.value as number).toBeLessThanOrEqual(0.96);
 });
 
+test("HomeVisual.setCoverUrl updates cover uniforms and update advances the baseline color mix tween", async () => {
+	const scene = makeFakeScene();
+	const hv = await createHomeVisual({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		loadCoverImage: async (url) => ({ width: 128, height: 128, src: url }),
+	});
+	hv.setCoverUrl("https://img.example/a.jpg");
+	await hv.getCoverController().whenIdle();
+	expect(hv.getField().materialUniforms.uHasCover.value).toBe(1);
+	expect(hv.getField().materialUniforms.uColorMixT.value).toBe(0);
+	hv.update(makeFrameCtx({}, { uTime: { value: 0.25 } }) as unknown as FrameContext);
+	expect(hv.getField().materialUniforms.uColorMixT.value as number).toBeGreaterThan(0);
+});
+
 test("preset 6 (skull) suppresses points visibility; non-skull leaves points visible", async () => {
 	const scene = makeFakeScene();
 	const hv = await createHomeVisual({ scene: scene as never, threeFactory: makeFakeThree() });

@@ -51,6 +51,8 @@ export interface VisualEngineRefs {
 	shelfCameraModeRef?: RefObject<string>;
 	shelfPresenceRef?: RefObject<string>;
 	wallpaperSafeRef?: RefObject<boolean>;
+	coverUrlRef?: RefObject<string>;
+	coverUrlVersionRef?: RefObject<number>;
 	onShelfPlayQueueIndexRef?: RefObject<((index: number) => void) | undefined>;
 	onShelfDetailRowClickRef?: RefObject<((payload: ShelfDetailRowClickPayload) => void) | undefined>;
 	onShelfOpenDetailContentRef?: RefObject<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListWriter) => void) | undefined>;
@@ -354,6 +356,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			});
 			let homeVisualPreviousPreset: number | null = null;
 			let homeVisualPreviewActive = false;
+			let syncedCoverUrlVersion = refs.coverUrlVersionRef?.current ?? 0;
+			homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
 			if (cancelled || disposedRef.current) {
 				homeVisual.dispose();
 				audioEngine.dispose();
@@ -428,6 +432,10 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				audioEngine.update(ctx.dt);
 			});
 			const offHome = renderLoop.registerStep(RenderStepSlot.HomeVisual, (ctx) => {
+				if (refs.coverUrlVersionRef && syncedCoverUrlVersion !== refs.coverUrlVersionRef.current) {
+					syncedCoverUrlVersion = refs.coverUrlVersionRef.current;
+					homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
+				}
 				const homeActive = refs.homeActiveRef?.current === true;
 				const enteringHomePreview = homeActive && !homeVisualPreviewActive;
 				const preset = resolveHomeVisualPreset(
@@ -584,5 +592,5 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			handles = null;
 			refs.lifecycleRef.current = null;
 		};
-	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.wallpaperSafeRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
+	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.wallpaperSafeRef, refs.coverUrlRef, refs.coverUrlVersionRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
 }

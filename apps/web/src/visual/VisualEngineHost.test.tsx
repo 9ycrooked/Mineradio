@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import {
+	resolveVisualCoverUrl,
 	resolveRuntimeShelfMode,
 	syncRuntimeShelfModeOverride,
 	VisualEngineHost,
@@ -35,4 +36,10 @@ test("syncRuntimeShelfModeOverride clears runtime override when default shelf pr
 	syncRuntimeShelfModeOverride(previousDefaultRef, overrideRef, "stage");
 	expect(overrideRef.current).toBeNull();
 	expect(previousDefaultRef.current).toBe("stage");
+});
+
+test("resolveVisualCoverUrl prefers explicit currentCoverUrl and falls back to currentTrack.coverUrl", () => {
+	expect(resolveVisualCoverUrl("override.jpg", { coverUrl: "track.jpg" } as never)).toBe("override.jpg");
+	expect(resolveVisualCoverUrl(undefined, { coverUrl: "track.jpg" } as never)).toBe("track.jpg");
+	expect(resolveVisualCoverUrl(null, null)).toBe("");
 });

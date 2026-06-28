@@ -141,6 +141,14 @@ export {
 	normalizeCoverResolution,
 } from "./home-visual/home-particle-field";
 export type { HomeParticleField, HomeParticleFieldOptions } from "./home-visual/home-particle-field";
+export { createHomeCoverTextureController } from "./home-visual/cover-texture";
+export type {
+	HomeCoverImage,
+	HomeCoverLoader,
+	HomeCoverTextureController,
+	HomeCoverTextureControllerOptions,
+	HomeCoverTextureUniforms,
+} from "./home-visual/cover-texture";
 export {
 	HOME_VISUAL_VERTEX_SHADER,
 	HOME_VISUAL_FRAGMENT_SHADER,

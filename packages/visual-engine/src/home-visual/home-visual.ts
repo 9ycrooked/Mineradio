@@ -10,12 +10,14 @@ import {
 	type HomeParticleField,
 	type HomeParticleFieldOptions,
 } from "./home-particle-field";
+import { createHomeCoverTextureController, type HomeCoverLoader, type HomeCoverTextureController } from "./cover-texture";
 
 export interface HomeVisualOptions {
 	scene: THREE.Scene;
 	threeFactory?: ThreeFactory;
 	coverResolution?: number;
 	fx?: FxState;
+	loadCoverImage?: HomeCoverLoader;
 }
 
 export interface HomeVisual {
@@ -25,6 +27,8 @@ export interface HomeVisual {
 	setPreset(p: number, opts?: PresetOpts): void;
 	getFx(): FxState;
 	getField(): HomeParticleField;
+	setCoverUrl(url: string | null | undefined): void;
+	getCoverController(): HomeCoverTextureController;
 }
 
 export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVisual> {
@@ -34,6 +38,10 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		coverResolution: opts.coverResolution ?? fx.coverResolution,
 	};
 	const field = await createHomeParticleField(opts.scene, fieldOpts);
+	const coverController = createHomeCoverTextureController({
+		uniforms: field.materialUniforms as never,
+		loadImage: opts.loadCoverImage,
+	});
 	field.applyFxState(fx);
 	field.bloomPoints.visible = !!(fx.bloom && fx.bloomStrength > 0.01) && fx.preset !== SKULL_PRESET_INDEX;
 	field.points.visible = fx.preset !== SKULL_PRESET_INDEX;
@@ -56,6 +64,7 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 			const ease = Math.min(1, dt * 4.8);
 			alphaUniform.value += (target - alphaUniform.value) * ease;
 		}
+		coverController.advanceColorMix(ctx.dt);
 	}
 
 	return {
@@ -78,6 +87,12 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		},
 		getField() {
 			return field;
+		},
+		setCoverUrl(url) {
+			coverController.setCoverUrl(url);
+		},
+		getCoverController() {
+			return coverController;
 		},
 	};
 }
