@@ -6,6 +6,7 @@ import {
 	resolveVisualCoverUrlForSidecar,
 	resolveRuntimeShelfMode,
 	syncRuntimeShelfModeOverride,
+	mapLyricPayload,
 	VisualEngineHost,
 } from "./VisualEngineHost";
 
@@ -50,4 +51,38 @@ test("resolveVisualCoverUrlForSidecar proxies remote covers through sidecar and 
 	expect(resolveVisualCoverUrlForSidecar("data:image/png;base64,abc", "http://127.0.0.1:4111")).toBe("data:image/png;base64,abc");
 	expect(resolveVisualCoverUrlForSidecar("file:///tmp/a.jpg", "http://127.0.0.1:4111")).toBe("");
 	expect(resolveVisualCoverUrlForSidecar("https://img.example/a.jpg", "")).toBe("https://img.example/a.jpg");
+});
+
+test("mapLyricPayload preserves native karaoke timing for stage lyrics", () => {
+	const lines = mapLyricPayload({
+		provider: "netease",
+		trackId: "42",
+		hasTranslation: false,
+		isWordByWord: true,
+		lines: [
+			{
+				timeMs: 1000,
+				durationMs: 2000,
+				text: "你好",
+				charCount: 2,
+				words: [
+					{ text: "你", timeMs: 1000, durationMs: 500, c0: 0, c1: 1 },
+					{ text: "好", timeMs: 1500, durationMs: 500, c0: 1, c1: 2 },
+				],
+			},
+		],
+	});
+
+	expect(lines).toEqual([
+		{
+			t: 1,
+			duration: 2,
+			text: "你好",
+			charCount: 2,
+			words: [
+				{ text: "你", t: 1, d: 0.5, c0: 0, c1: 1 },
+				{ text: "好", t: 1.5, d: 0.5, c0: 1, c1: 2 },
+			],
+		},
+	]);
 });

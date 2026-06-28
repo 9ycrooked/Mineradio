@@ -34,11 +34,22 @@ export interface VisualEngineHostProps {
 	onShelfOpenDetailContent?: (payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListWriter) => void;
 }
 
-function mapLyricPayload(payload: LyricPayload | null): VisualLyricLine[] {
+export function mapLyricPayload(payload: LyricPayload | null): VisualLyricLine[] {
 	if (!payload || !Array.isArray(payload.lines)) return [];
 	return payload.lines.map((line: SharedLyricLine): VisualLyricLine => ({
 		t: Math.max(0, line.timeMs) / 1000,
 		text: line.text ?? "",
+		duration: typeof line.durationMs === "number" ? Math.max(0, line.durationMs) / 1000 : undefined,
+		charCount: line.charCount,
+		words: Array.isArray(line.words)
+			? line.words.map((word) => ({
+					text: word.text,
+					t: Math.max(0, word.timeMs) / 1000,
+					d: typeof word.durationMs === "number" ? Math.max(0, word.durationMs) / 1000 : undefined,
+					c0: word.c0,
+					c1: word.c1,
+				}))
+			: undefined,
 	}));
 }
 

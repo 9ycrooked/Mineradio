@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   parseLrc,
+  parseYrcText,
   mapHanaSongToTrack,
   mapHanaLyricToPayload,
   mapHanaPlaylistToSummary,
@@ -101,10 +102,51 @@ test("mapHanaLyricToPayload sets isWordByWord when yrc present", () => {
   const payload = mapHanaLyricToPayload({
     trackId: "1",
     lrc: "[00:01.00]l",
-    yrc: "[00:01.00]l(x)"
+    yrc: "[1000,2000](1000,500,0)你(1500,500,0)好"
   });
   expect(payload.isWordByWord).toBe(true);
   expect(payload.hasTranslation).toBe(false);
+  expect(payload.lines[0].timeMs).toBe(1000);
+  expect(payload.lines[0].durationMs).toBe(2000);
+  expect(payload.lines[0].text).toBe("你好");
+  expect(payload.lines[0].source).toBe("yrc-word");
+  expect(payload.lines[0].words?.[0]).toEqual({
+    text: "你",
+    timeMs: 1000,
+    durationMs: 500,
+    c0: 0,
+    c1: 1
+  });
+});
+
+test("parseYrcText follows baseline absolute-or-relative word timing and trims character ranges", () => {
+  const lines = parseYrcText("[2000,3000](0,400,0) 你 (2450,500,0)好 ");
+
+  expect(lines.length).toBe(1);
+  expect(lines[0].timeMs).toBe(2000);
+  expect(lines[0].durationMs).toBe(3000);
+  expect(lines[0].text).toBe("你 好");
+  expect(lines[0].charCount).toBe(3);
+  expect(lines[0].source).toBe("yrc-word");
+  expect(lines[0].words).toEqual([
+    { text: " 你 ", timeMs: 2000, durationMs: 400, c0: 0, c1: 2 },
+    { text: "好 ", timeMs: 2450, durationMs: 500, c0: 2, c1: 3 }
+  ]);
+});
+
+test("mapHanaLyricToPayload preserves native karaoke words when translation matches", () => {
+  const payload = mapHanaLyricToPayload({
+    trackId: "1",
+    tlyric: "[00:01.00]hello",
+    yrc: "[1000,2000](1000,500,0)你(1500,500,0)好"
+  });
+
+  expect(payload.hasTranslation).toBe(true);
+  expect(payload.isWordByWord).toBe(true);
+  expect(payload.lines[0].translation).toBe("hello");
+  expect(payload.lines[0].durationMs).toBe(2000);
+  expect(payload.lines[0].source).toBe("yrc-word");
+  expect(payload.lines[0].words?.length).toBe(2);
 });
 
 test("mapHanaLyricToPayload sets isWordByWord when klyric present", () => {

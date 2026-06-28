@@ -101,6 +101,76 @@ export function parseLrc(text: string): LyricLine[] {
   return out;
 }
 
+function finalizeLyricLineDurations(lines: LyricLine[]): LyricLine[] {
+  lines.sort((a, b) => a.timeMs - b.timeMs);
+  for (let i = 0; i < lines.length; i++) {
+    const current = lines[i];
+    if (!current) continue;
+    const next = lines[i + 1];
+    const inferred = next && next.timeMs > current.timeMs ? next.timeMs - current.timeMs : 4800;
+    const duration = typeof current.durationMs === "number" && isFinite(current.durationMs) && current.durationMs > 0
+      ? current.durationMs
+      : inferred;
+    current.durationMs = Math.max(450, Math.min(12000, duration));
+    current.charCount = Math.max(1, current.charCount ?? String(current.text ?? "").length);
+  }
+  return lines;
+}
+
+export function parseYrcText(text: string): LyricLine[] {
+  const lines: LyricLine[] = [];
+  if (!text || typeof text !== "string") return lines;
+  for (const rawLine of text.split(/\r\n|\r|\n/)) {
+    const m = rawLine.match(/^\[(\d+),(\d+)\](.*)$/);
+    if (!m) continue;
+    const lineStartMs = parseInt(m[1], 10) || 0;
+    const lineDurMs = parseInt(m[2], 10) || 0;
+    const body = m[3] ?? "";
+    let fullText = "";
+    let words: NonNullable<LyricLine["words"]> = [];
+    const wordRe = /\((\d+),(\d+),\d+\)([^()]*)/g;
+    let wm: RegExpExecArray | null;
+    while ((wm = wordRe.exec(body)) !== null) {
+      const txt = (wm[3] ?? "").replace(/\s+/g, " ");
+      if (!txt) continue;
+      const rawStart = parseInt(wm[1], 10) || 0;
+      const rawDur = parseInt(wm[2], 10) || 0;
+      const absStartMs = rawStart >= lineStartMs - 500 ? rawStart : lineStartMs + rawStart;
+      const c0 = fullText.length;
+      fullText += txt;
+      words.push({
+        text: txt,
+        timeMs: absStartMs,
+        durationMs: Math.max(60, rawDur),
+        c0,
+        c1: fullText.length
+      });
+    }
+    if (!fullText) fullText = body.replace(/\(\d+,\d+,\d+\)/g, "").replace(/\s+/g, " ");
+    const leading = (fullText.match(/^\s+/) ?? [""])[0].length;
+    fullText = fullText.replace(/\s+/g, " ").trim();
+    if (!fullText) continue;
+    if (words.length) {
+      words = words
+        .map((w) => ({
+          ...w,
+          c0: Math.max(0, Math.min(fullText.length, w.c0 - leading)),
+          c1: Math.max(Math.max(0, Math.min(fullText.length, w.c0 - leading)), Math.min(fullText.length, w.c1 - leading))
+        }))
+        .filter((w) => w.c1 > w.c0);
+    }
+    lines.push({
+      timeMs: lineStartMs,
+      durationMs: lineDurMs,
+      text: fullText,
+      words,
+      charCount: Math.max(1, fullText.length),
+      source: words.length ? "yrc-word" : "yrc-line"
+    });
+  }
+  return finalizeLyricLineDurations(lines);
+}
+
 export function mapHanaLyricToPayload(opts: {
   trackId: string;
   lrc?: string;
@@ -112,16 +182,17 @@ export function mapHanaLyricToPayload(opts: {
   const tlrc = opts.tlyric ?? "";
   const klrc = opts.klyric ?? "";
   const yrc = opts.yrc ?? "";
-  const baseLines = parseLrc(lrcText);
+  const yrcLines = parseYrcText(yrc);
+  const baseLines = yrcLines.length > 0 ? yrcLines : parseLrc(lrcText);
   const transLines = parseLrc(tlrc);
   const transMap = new Map<number, string>();
   for (const t of transLines) transMap.set(t.timeMs, t.text);
   const lines: LyricLine[] = baseLines.map(l => {
     const tr = transMap.get(l.timeMs);
-    return tr != null ? { timeMs: l.timeMs, text: l.text, translation: tr } : l;
+    return tr != null ? { ...l, translation: tr } : l;
   });
   const hasTranslation = tlrc.trim().length > 0 && transLines.length > 0;
-  const isWordByWord = klrc.trim().length > 0 || yrc.trim().length > 0;
+  const isWordByWord = baseLines.some((line) => Array.isArray(line.words) && line.words.length > 0) || klrc.trim().length > 0;
   return {
     provider: "netease",
     trackId: opts.trackId,
