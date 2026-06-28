@@ -14,8 +14,18 @@ import {
 	type ShelfCardDrawState,
 } from "./shelf-card-sprite";
 import {
+	createShelfContentPanelSprite,
+	createShelfContentRowSprite,
+	type ShelfContentPanelSprite,
+	type ShelfContentRowSprite,
+} from "./shelf-content-sprite";
+import {
+	CONTENT_MAX_RENDER,
+	computeContentPanelOpacity,
 	createShelfContentList,
 	type ShelfContentList,
+	type ShelfContentScreenBounds,
+	type ShelfContentScreenRow,
 } from "./shelf-content-list";
 import {
 	createShelfState,
@@ -127,11 +137,16 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 	let breathPulseLast = 0;
 	let lastFrameNow = 0;
 	let lastUpdateDtSeconds = 1 / 60;
+	let lastVisualTime = 0;
 	const nowFn =
 		opts.now ??
 		(() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
-	const contentList = createShelfContentList({ now: () => nowFn() / 1000 });
+	const contentList = createShelfContentList({ now: () => lastVisualTime });
 	let openDetailCardKey: string | null = null;
+	let detailGroup: THREE.Group | null = null;
+	let detailPanel: ShelfContentPanelSprite | null = null;
+	const detailRows = new Map<number, ShelfContentRowSprite>();
+	let detailRowsSig = "";
 
 	return {
 		getState() {
@@ -148,6 +163,7 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			return data;
 		},
 		update(ctx) {
+			lastVisualTime = ctx.uniforms.uTime.value;
 			if (lastFrameNow === 0) lastFrameNow = ctx.now;
 			const dtMs = Math.max(0, ctx.now - lastFrameNow);
 			lastFrameNow = ctx.now;
@@ -187,6 +203,7 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			}
 			rebuildRenderedWindowIfNeeded();
 			applyRenderedCardLayout(ctx);
+			syncDetailContentMeshes(ctx);
 
 			void nowFn;
 		},
@@ -366,6 +383,8 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			return null;
 		},
 		dispose() {
+			disposeDetailContentMeshes();
+			contentList.clearScreenTargets();
 			disposeRenderedCards();
 			if (group && scene && ownsGroup) {
 				scene.remove(group);
@@ -587,6 +606,272 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 		card.update(item, drawState);
 	}
 
+	function syncDetailContentMeshes(ctx: FrameContext): void {
+		if (
+			!contentList.isOpen() ||
+			state.openCardIdx < 0 ||
+			state.mode === "off" ||
+			state.shelfVisibility <= 0 ||
+			!group ||
+			!group.visible ||
+			!three ||
+			!doc
+		) {
+			disposeDetailContentMeshes();
+			contentList.clearScreenTargets();
+			detailRowsSig = "";
+			return;
+		}
+
+		ensureDetailPanel();
+		applyDetailGroupLayout(ctx);
+		if (!detailPanel) return;
+		const snapshot = contentList.getSnapshot();
+		detailPanel.update(snapshot.playlistTitle);
+		detailPanel.material.opacity = computeContentPanelOpacity({
+			now: ctx.uniforms.uTime.value,
+			openAnimAt: snapshot.openAnimAt,
+		});
+		detailPanel.mesh.visible = true;
+
+		syncDetailRows(ctx);
+		syncDetailScreenTargets(ctx);
+	}
+
+	function ensureDetailPanel(): void {
+		const targetGroup = ensureDetailGroup();
+		if (detailPanel || !targetGroup || !three || !doc) return;
+		detailPanel = createShelfContentPanelSprite({
+			three,
+			createCanvas: () => doc.createElement("canvas"),
+		}, contentList.getSnapshot().playlistTitle);
+		targetGroup.add(detailPanel.mesh);
+	}
+
+	function ensureDetailGroup(): THREE.Group | null {
+		if (detailGroup || !group || !three) return detailGroup;
+		detailGroup = new three.Group();
+		detailGroup.userData.shelfContentDetailGroup = true;
+		group.add(detailGroup);
+		return detailGroup;
+	}
+
+	function applyDetailGroupLayout(ctx: FrameContext): void {
+		const targetGroup = ensureDetailGroup();
+		if (!targetGroup) return;
+		const layout = getDefaultShelfLayoutProfile().detail;
+		const snapshot = contentList.getSnapshot();
+		const intro = 1 - smoothstep01(clampRange((ctx.uniforms.uTime.value - snapshot.openAnimAt) / 0.48, 0, 1));
+		const parX = ctx.pointerParallax?.x || 0;
+		const parY = ctx.pointerParallax?.y || 0;
+		targetGroup.visible = true;
+		targetGroup.position.set(
+			layout.x + intro * 0.16 + parX * 0.030,
+			layout.y - intro * 0.024 + parY * 0.026,
+			layout.z - intro * 0.070 + parY * 0.016 - parX * 0.010,
+		);
+		targetGroup.rotation.set(
+			layout.rx - parY * 0.010,
+			layout.ry + intro * 0.018 + parX * 0.014,
+			0,
+		);
+		targetGroup.scale.setScalar(layout.scale * (1 - intro * 0.035));
+	}
+
+	function syncDetailRows(ctx: FrameContext): void {
+		const targetGroup = ensureDetailGroup();
+		if (!targetGroup || !three || !doc) {
+			disposeDetailRows();
+			return;
+		}
+		const rows = contentList.getRows();
+		const window = contentList.computeRenderWindow();
+		const indexes: number[] = [];
+		for (let index = window.start; index <= window.end && indexes.length < CONTENT_MAX_RENDER; index++) {
+			if (rows[index]) indexes.push(index);
+		}
+		const sig = indexes.map((index) => {
+			const row = rows[index];
+			return [
+				index,
+				row.id || "",
+				row.name || "",
+				row.artist || "",
+				row.kind || "",
+				row.provider || "",
+			].join(":");
+		}).join("|");
+
+		if (sig !== detailRowsSig) {
+			for (const [index, sprite] of detailRows) {
+				if (indexes.includes(index)) continue;
+				disposeDetailRow(sprite);
+				detailRows.delete(index);
+			}
+			for (const index of indexes) {
+				const row = rows[index];
+				if (!row || detailRows.has(index)) continue;
+				const centered = Math.abs(index - contentList.getSnapshot().centerSmooth) < 0.5;
+				const sprite = createShelfContentRowSprite({
+					three,
+					createCanvas: () => doc.createElement("canvas"),
+				}, row, index, centered);
+				targetGroup.add(sprite.mesh);
+				detailRows.set(index, sprite);
+			}
+			detailRowsSig = sig;
+		}
+
+		for (const [index, sprite] of detailRows) {
+			const row = rows[index];
+			if (!row) continue;
+			const layout = contentList.computeRowLayout(index, {
+				now: ctx.uniforms.uTime.value,
+				pointerParallax: ctx.pointerParallax,
+				pulse: ctx.uniforms.uBeat.value,
+				rowSettle: readGroupRowSettle(),
+			});
+			sprite.mesh.visible = layout.visible;
+			sprite.mesh.renderOrder = layout.renderOrder;
+			sprite.mesh.position.set(layout.position.x, layout.position.y, layout.position.z);
+			sprite.mesh.rotation.set(layout.rotation.x, layout.rotation.y, 0);
+			sprite.mesh.scale.setScalar(layout.scale);
+			sprite.material.opacity = layout.opacity;
+			const centered = Math.abs(index - contentList.getSnapshot().centerSmooth) < 0.5;
+			if (sprite.row !== row || sprite.index !== index || sprite.lastCenter !== centered) {
+				sprite.update(row, index, centered);
+			}
+		}
+	}
+
+	function syncDetailScreenTargets(ctx: FrameContext): void {
+		const viewport = getFrameViewport(ctx);
+		const camera = ctx.camera;
+		if (!viewport || !camera || !detailPanel || !detailGroup || !three) {
+			contentList.clearScreenTargets();
+			return;
+		}
+		detailGroup.updateMatrixWorld(true);
+
+		const rowTargets: ShelfContentScreenRow[] = [];
+		for (const sprite of detailRows.values()) {
+			const bounds = projectMeshScreenBounds(sprite.mesh, viewport.width, viewport.height, camera);
+			if (!bounds) continue;
+			rowTargets.push({
+				row: sprite.row,
+				visible: sprite.mesh.visible,
+				renderOrder: sprite.mesh.renderOrder,
+				bounds,
+			});
+		}
+		const panelBounds = projectMeshScreenBounds(detailPanel.mesh, viewport.width, viewport.height, camera);
+		contentList.setScreenTargets({
+			rows: rowTargets,
+			panel: panelBounds ? {
+				visible: detailPanel.mesh.visible,
+				bounds: panelBounds,
+			} : null,
+		});
+	}
+
+	function projectMeshScreenBounds(
+		mesh: THREE.Mesh,
+		viewportWidth: number,
+		viewportHeight: number,
+		camera: THREE.Camera,
+	): ShelfContentScreenBounds | null {
+		if (!mesh.visible || !group || !group.visible || !three) return null;
+		if (viewportWidth <= 0 || viewportHeight <= 0) return null;
+		const params = (mesh.geometry as { parameters?: { width?: number; height?: number } } | undefined)?.parameters ?? {};
+		const hw = (params.width || 1) / 2;
+		const hh = (params.height || 1) / 2;
+		const pts = [
+			new three.Vector3(-hw, -hh, 0),
+			new three.Vector3(hw, -hh, 0),
+			new three.Vector3(hw, hh, 0),
+			new three.Vector3(-hw, hh, 0),
+		];
+		let minX = Infinity;
+		let minY = Infinity;
+		let maxX = -Infinity;
+		let maxY = -Infinity;
+		mesh.updateMatrixWorld(true);
+		for (const pt of pts) {
+			pt.applyMatrix4(mesh.matrixWorld).project(camera);
+			const x = (pt.x + 1) * viewportWidth / 2;
+			const y = (1 - pt.y) * viewportHeight / 2;
+			minX = Math.min(minX, x);
+			maxX = Math.max(maxX, x);
+			minY = Math.min(minY, y);
+			maxY = Math.max(maxY, y);
+		}
+		if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+			return null;
+		}
+		return { minX, minY, maxX, maxY };
+	}
+
+	function getFrameViewport(ctx: FrameContext): { width: number; height: number } | null {
+		const fromCtx = ctx as FrameContext & {
+			viewport?: { width?: number; height?: number };
+		};
+		const ctxWidth = fromCtx.viewport?.width;
+		const ctxHeight = fromCtx.viewport?.height;
+		if (Number.isFinite(ctxWidth) && Number.isFinite(ctxHeight) && ctxWidth! > 0 && ctxHeight! > 0) {
+			return { width: ctxWidth!, height: ctxHeight! };
+		}
+		if (typeof window !== "undefined" && window.innerWidth > 0 && window.innerHeight > 0) {
+			return { width: window.innerWidth, height: window.innerHeight };
+		}
+		const root = doc?.documentElement;
+		if (root && root.clientWidth > 0 && root.clientHeight > 0) {
+			return { width: root.clientWidth, height: root.clientHeight };
+		}
+		return null;
+	}
+
+	function readGroupRowSettle(): number {
+		const userData = group?.userData as { rowSettle?: number } | undefined;
+		const rowSettle = userData?.rowSettle;
+		return Number.isFinite(rowSettle) ? rowSettle! : 0;
+	}
+
+	function disposeDetailContentMeshes(): void {
+		disposeDetailRows();
+		if (detailPanel) {
+			try {
+				detailGroup?.remove(detailPanel.mesh);
+			} catch {
+			}
+			detailPanel.dispose();
+			detailPanel = null;
+		}
+		if (detailGroup) {
+			try {
+				group?.remove(detailGroup);
+			} catch {
+			}
+			detailGroup = null;
+		}
+	}
+
+	function disposeDetailRows(): void {
+		if (detailRows.size === 0) return;
+		for (const sprite of detailRows.values()) {
+			disposeDetailRow(sprite);
+		}
+		detailRows.clear();
+		detailRowsSig = "";
+	}
+
+	function disposeDetailRow(sprite: ShelfContentRowSprite): void {
+		try {
+			detailGroup?.remove(sprite.mesh);
+		} catch {
+		}
+		sprite.dispose();
+	}
+
 	function computeRenderWindow(): { start: number; end: number } {
 		const roundedCenter = clampInt(Math.round(state.centerSmooth), 0, Math.max(0, data.length - 1));
 		state.centerIdx = roundedCenter;
@@ -689,6 +974,9 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 		state.openCardIdx = -1;
 		openDetailCardKey = null;
 		contentList.close();
+		disposeDetailContentMeshes();
+		contentList.clearScreenTargets();
+		detailRowsSig = "";
 	}
 }
 
@@ -700,6 +988,10 @@ function clampInt(value: number, min: number, max: number): number {
 function clampRange(value: number, min: number, max: number): number {
 	if (!Number.isFinite(value)) return min;
 	return Math.max(min, Math.min(max, value));
+}
+
+function smoothstep01(value: number): number {
+	return value * value * (3 - 2 * value);
 }
 
 function podcastPlaylistId(podcastKey: string | undefined): string | undefined {

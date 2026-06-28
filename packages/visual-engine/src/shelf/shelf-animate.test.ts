@@ -4,6 +4,8 @@ import type { FrameContext } from "../runtime/frame-context";
 import type { RuntimeUniforms } from "../runtime/uniforms";
 import { createRuntimeUniforms } from "../runtime/uniforms";
 import { SHELF_MAX_RENDER } from "./card-position";
+import { CONTENT_MAX_RENDER } from "./shelf-content-list";
+import { getDefaultShelfLayoutProfile } from "./shelf-layout-profile";
 import {
 	createShelfManager,
 	type ShelfItem,
@@ -447,6 +449,15 @@ test("ShelfManager.openDetail + closeDetail mutate openCardIdx", () => {
 	expect(m.getState().openCardIdx).toBe(-1);
 });
 
+test("ShelfManager.openDetail does not restart existing shelf card reveal timing", () => {
+	const m = createShelfManager({ now: () => 42000 });
+	m.getState().shelfOpenAnimAt = 12.5;
+
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+
+	expect(m.getState().shelfOpenAnimAt).toBe(12.5);
+});
+
 test("ShelfManager exposes a content-list skeleton for open detail state", () => {
 	const m = createShelfManager({ now: () => 42000 });
 	expect(m.hasOpenContent()).toBe(false);
@@ -459,7 +470,7 @@ test("ShelfManager exposes a content-list skeleton for open detail state", () =>
 	expect(list?.isOpen()).toBe(true);
 	expect(list?.getSnapshot().playlistId).toBe("p1");
 	expect(list?.getSnapshot().playlistTitle).toBe("Playlist 1");
-	expect(list?.getSnapshot().openAnimAt).toBe(42);
+	expect(list?.getSnapshot().openAnimAt).toBe(0);
 
 	m.closeDetail();
 	expect(m.hasOpenContent()).toBe(false);
@@ -1025,3 +1036,308 @@ test("ShelfManager.pickCardAtScreen returns highest renderOrder card when padded
 	expect(hit?.item.playlistId).toBe("high");
 	expect(hit?.screenPick).toBe(true);
 });
+
+test("ShelfManager renders open detail panel and capped row meshes, then syncs screen targets", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-4, 4, 3, -3, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 1;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+
+	m.setShelfVisibility(1);
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	m.getContentList()?.setRows(Array.from({ length: 20 }, (_, index) => ({
+		id: `song-${index}`,
+		name: `Song ${index}`,
+		artist: `Artist ${index}`,
+	})));
+
+	m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		viewport: { width: 800, height: 600 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+
+	const detailMeshes = findDetailMeshes(group);
+	const panelMeshes = detailMeshes.filter((child) =>
+		(child as import("three").Object3D).userData?.shelfContentKind === "panel"
+	);
+	const rowMeshes = detailMeshes.filter((child) =>
+		(child as import("three").Object3D).userData?.shelfContentKind === "row"
+	);
+
+	expect(panelMeshes.length).toBe(1);
+	expect(rowMeshes.length).toBe(CONTENT_MAX_RENDER);
+	expect(m.getContentList()?.hasScreenTargetAt({ x: 400, y: 300 })).toBe(true);
+});
+
+test("ShelfManager nests detail meshes under a transformed baseline detail group and projects screen targets from world space", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-5, 5, 4, -4, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 1;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+
+	m.setShelfVisibility(1);
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	m.getContentList()?.setRows([{ id: "song-0", name: "Song 0", artist: "Artist 0" }]);
+	m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		pointerParallax: { x: 0, y: 0 },
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+
+	const detailGroup = group.children.find((child) =>
+		(child as import("three").Object3D).userData?.shelfContentDetailGroup === true
+	) as import("three").Group | undefined;
+	expect(detailGroup).toBeDefined();
+	const detail = getDefaultShelfLayoutProfile().detail;
+	expect(detailGroup?.position.x).toBeCloseTo(detail.x, 5);
+	expect(detailGroup?.position.y).toBeCloseTo(detail.y, 5);
+	expect(detailGroup?.position.z).toBeCloseTo(detail.z, 5);
+	expect(detailGroup?.rotation.x).toBeCloseTo(detail.rx, 5);
+	expect(detailGroup?.rotation.y).toBeCloseTo(detail.ry, 5);
+	expect(detailGroup?.scale.x).toBeCloseTo(detail.scale, 5);
+	expect(detailGroup?.scale.y).toBeCloseTo(detail.scale, 5);
+
+	const panelMeshes = detailGroup?.children.filter((child) =>
+		(child as import("three").Object3D).userData?.shelfContentKind === "panel"
+	) ?? [];
+	const rowMeshes = detailGroup?.children.filter((child) =>
+		(child as import("three").Object3D).userData?.shelfContentKind === "row"
+	) as import("three").Mesh[] | undefined ?? [];
+	expect(panelMeshes.length).toBe(1);
+	expect(rowMeshes.length).toBe(1);
+	expect(group.children.some((child) =>
+		(child as import("three").Object3D).userData?.shelfContentKind === "row"
+	)).toBe(false);
+
+	const rowCenter = new three.Vector3(0, 0, 0);
+	rowMeshes[0].updateMatrixWorld(true);
+	rowCenter.applyMatrix4(rowMeshes[0].matrixWorld).project(camera);
+	const point = {
+		x: (rowCenter.x + 1) * 1000 / 2,
+		y: (1 - rowCenter.y) * 800 / 2,
+	};
+	expect(m.getContentList()?.hasScreenTargetAt(point)).toBe(true);
+});
+
+test("ShelfManager detail group intro settles against visual uTime instead of wall-clock time", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-5, 5, 4, -4, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 10;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument(), now: () => 42000 });
+	const detail = getDefaultShelfLayoutProfile().detail;
+
+	m.setShelfVisibility(1);
+	m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	m.getContentList()?.setRows([{ id: "song-0", name: "Song 0", artist: "Artist 0" }]);
+
+	m.update({
+		...makeCtx(uniforms, 32),
+		camera: camera as unknown as FrameContext["camera"],
+		pointerParallax: { x: 0, y: 0 },
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+	const introGroup = findDetailGroup(group);
+	expect(introGroup?.position.x).toBeGreaterThan(detail.x + 0.12);
+	expect(introGroup?.scale.x).toBeLessThan(detail.scale);
+
+	uniforms.uTime.value = 10.6;
+	m.update({
+		...makeCtx(uniforms, 48),
+		camera: camera as unknown as FrameContext["camera"],
+		pointerParallax: { x: 0, y: 0 },
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+	const settledGroup = findDetailGroup(group);
+	expect(settledGroup?.position.x).toBeCloseTo(detail.x, 5);
+	expect(settledGroup?.position.y).toBeCloseTo(detail.y, 5);
+	expect(settledGroup?.position.z).toBeCloseTo(detail.z, 5);
+	expect(settledGroup?.scale.x).toBeCloseTo(detail.scale, 5);
+});
+
+test("ShelfManager refreshes detail group world matrix before syncing screen targets", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-5, 5, 4, -4, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 10;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+
+	m.setShelfVisibility(1);
+	m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	m.getContentList()?.setRows([{ id: "song-0", name: "Song 0", artist: "Artist 0" }]);
+	m.update({
+		...makeCtx(uniforms, 32),
+		camera: camera as unknown as FrameContext["camera"],
+		pointerParallax: { x: 0, y: 0 },
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+	const detailGroup = findDetailGroup(group);
+	expect(detailGroup).toBeDefined();
+	const updateMatrixWorldCalls: boolean[] = [];
+	const originalUpdateMatrixWorld = detailGroup!.updateMatrixWorld.bind(detailGroup);
+	detailGroup!.updateMatrixWorld = (force?: boolean) => {
+		updateMatrixWorldCalls.push(!!force);
+		originalUpdateMatrixWorld(force);
+	};
+
+	uniforms.uTime.value = 10.6;
+	m.update({
+		...makeCtx(uniforms, 48),
+		camera: camera as unknown as FrameContext["camera"],
+		pointerParallax: { x: 0, y: 0 },
+		viewport: { width: 1000, height: 800 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+
+	expect(updateMatrixWorldCalls).toContain(true);
+});
+
+test("ShelfManager closeDetail disposes detail meshes and clears content-list screen targets", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-4, 4, 3, -3, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 1;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+	m.setShelfVisibility(1);
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	m.getContentList()?.setRows([
+		{ id: "a", name: "Song A", artist: "Artist A" },
+		{ id: "b", name: "Song B", artist: "Artist B" },
+	]);
+	m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		viewport: { width: 800, height: 600 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+	const list = m.getContentList();
+	expect(list?.hasScreenTargetAt({ x: 400, y: 300 })).toBe(true);
+
+	let disposeEvents = 0;
+	const detailMeshes = findDetailMeshes(group) as import("three").Mesh[];
+	for (const mesh of detailMeshes) {
+		mesh.geometry.addEventListener("dispose", () => disposeEvents++);
+		const material = mesh.material as import("three").MeshBasicMaterial;
+		material.addEventListener("dispose", () => disposeEvents++);
+		material.map?.addEventListener("dispose", () => disposeEvents++);
+	}
+
+	m.closeDetail();
+
+	expect(findDetailMeshes(group).length).toBe(0);
+	expect(list?.hasScreenTargetAt({ x: 400, y: 300 })).toBe(false);
+	expect(disposeEvents).toBe(detailMeshes.length * 3);
+});
+
+test("ShelfManager rebuilds detail row meshes when content render window changes and keeps max cap", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-4, 4, 3, -3, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 1;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+	m.setShelfVisibility(1);
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	const rows = Array.from({ length: 25 }, (_, index) => ({
+		id: `song-${index}`,
+		name: `Song ${index}`,
+		artist: `Artist ${index}`,
+	}));
+	m.getContentList()?.setRows(rows);
+
+	const updateDetail = () => m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		viewport: { width: 800, height: 600 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+
+	updateDetail();
+	const firstIndexes = detailRowIndexes(group);
+	expect(firstIndexes).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+	m.getContentList()?.scrollBy(12);
+	updateDetail();
+
+	const nextIndexes = detailRowIndexes(group);
+	expect(nextIndexes).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+	expect(nextIndexes.length).toBe(CONTENT_MAX_RENDER);
+	for (let frame = 0; frame < 72; frame++) {
+		uniforms.uTime.value += 1 / 60;
+		updateDetail();
+	}
+	expect(m.getContentList()?.pickRowAtScreen({ x: 400, y: 300 })?.row.id).toBe("song-12");
+});
+
+function detailRowIndexes(group: import("three").Group): number[] {
+	return findDetailMeshes(group)
+		.filter((child) => (child as import("three").Object3D).userData?.shelfContentKind === "row")
+		.map((child) => Number((child as import("three").Object3D).userData.shelfContentRowIndex))
+		.sort((a, b) => a - b);
+}
+
+function findDetailMeshes(group: import("three").Group): import("three").Object3D[] {
+	const found: import("three").Object3D[] = [];
+	group.traverse((child) => {
+		if (child.userData?.shelfContentDetail === true) found.push(child);
+	});
+	return found;
+}
+
+function findDetailGroup(group: import("three").Group): import("three").Group | undefined {
+	return group.children.find((child) =>
+		child.userData?.shelfContentDetailGroup === true
+	) as import("three").Group | undefined;
+}
