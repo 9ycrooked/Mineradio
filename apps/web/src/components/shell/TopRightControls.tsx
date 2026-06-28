@@ -4,9 +4,11 @@ export interface TopRightControlsProps {
 	onHome?: () => void;
 	onLogin?: () => void;
 	onHideCapsule?: () => void;
+	loggedIn?: boolean;
+	accountLabel?: string;
 }
 
-export function TopRightControls({ onHome, onLogin, onHideCapsule }: TopRightControlsProps): ReactElement {
+export function TopRightControls({ onHome, onLogin, onHideCapsule, loggedIn = false, accountLabel }: TopRightControlsProps): ReactElement {
 	return (
 		<div id="top-right">
 			<button
@@ -33,8 +35,8 @@ export function TopRightControls({ onHome, onLogin, onHideCapsule }: TopRightCon
 					<path d="M9.5 20v-5h5v5" />
 				</svg>
 			</button>
-			<button id="user-btn" className="icon-btn logged-out" type="button" onClick={onLogin} title="登录账号" aria-label="登录账号">
-				<span className="login-word">登录</span>
+			<button id="user-btn" className={loggedIn ? "icon-btn logged-in" : "icon-btn logged-out"} type="button" onClick={onLogin} title={loggedIn ? "账号信息" : "登录账号"} aria-label={loggedIn ? "账号信息" : "登录账号"}>
+				<span className="login-word">{loggedIn ? (accountLabel ?? "已登录") : "登录"}</span>
 			</button>
 		</div>
 	);

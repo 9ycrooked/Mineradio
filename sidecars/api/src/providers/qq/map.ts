@@ -8,13 +8,18 @@ import type {
 
 export interface QqSong {
   songmid?: string;
+  mid?: string;
   songname?: string;
+  name?: string;
   singer?: Array<{ mid?: string; name?: string } | null | undefined>;
+  singername?: string;
+  singerName?: string;
   albumname?: string;
   albummid?: string;
   albumid?: number | string;
   interval?: number; // seconds
   songid?: number | string;
+  pic?: string;
 }
 
 export interface QqPlaylistBody {
@@ -26,7 +31,7 @@ export interface QqPlaylistBody {
 }
 
 export function mapQqSongToTrack(raw: QqSong): Track {
-  const idStr = raw && raw.songmid != null ? String(raw.songmid) : "";
+  const idStr = raw && raw.songmid != null ? String(raw.songmid) : (raw?.mid != null ? String(raw.mid) : "");
   const singers = raw && Array.isArray(raw.singer) ? raw.singer : [];
   const artists: string[] = [];
   for (const s of singers) {
@@ -34,19 +39,29 @@ export function mapQqSongToTrack(raw: QqSong): Track {
       artists.push(s.name);
     }
   }
+  if (artists.length === 0) {
+    const singerText = typeof raw?.singer === "string"
+      ? raw.singer
+      : (typeof raw?.singername === "string" ? raw.singername : raw?.singerName);
+    if (typeof singerText === "string" && singerText.trim().length > 0) {
+      artists.push(...singerText.split(/[、/,]/).map(s => s.trim()).filter(Boolean));
+    }
+  }
   const intervalSec = raw && typeof raw.interval === "number" ? raw.interval : undefined;
   const durationMs = intervalSec != null ? intervalSec * 1000 : undefined;
   // QQ search returns `albummid`; jsososo album cover URL is derived client-side:
   //   https://y.gtimg.cn/music/photo_new/T002R300x300M000${albummid}.jpg
   const albumMid = raw && typeof raw.albummid === "string" ? raw.albummid : "";
-  const coverUrl = albumMid.length > 0
+  const coverUrl = typeof raw?.pic === "string" && raw.pic.length > 0
+    ? raw.pic.replace(/^http:\/\//, "https://")
+    : albumMid.length > 0
     ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${albumMid}.jpg`
     : "";
   return {
     provider: "qq",
     id: idStr,
     sourceId: idStr,
-    title: raw?.songname ?? "",
+    title: raw?.songname ?? raw?.name ?? "",
     artists,
     album: raw?.albumname ?? "",
     coverUrl,

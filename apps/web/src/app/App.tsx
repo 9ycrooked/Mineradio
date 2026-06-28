@@ -15,6 +15,7 @@ import { EmptyHomeHost } from "../home/EmptyHomeHost";
 import { SplashHost } from "../visual/SplashHost";
 import { VisualEngineHost } from "../visual/VisualEngineHost";
 import { createShelfDetailContentLoader, playShelfDetailRow } from "../visual/shelf-detail-data";
+import type { ProviderId, ProviderLoginStatus } from "@mineradio/shared";
 
 const SHOW_SPLASH = import.meta.env.VITE_SPLASH !== "0";
 
@@ -38,6 +39,9 @@ function audioElementSupported(): boolean {
 export function App(): ReactElement {
 	const [sidecarClient, setSidecarClient] = useState<SidecarClient | null>(null);
 	const [splashActive, setSplashActive] = useState<boolean>(SHOW_SPLASH);
+	const [loginModalOpen, setLoginModalOpen] = useState(false);
+	const [neteaseStatus, setNeteaseStatus] = useState<ProviderLoginStatus | null>(null);
+	const [qqStatus, setQqStatus] = useState<ProviderLoginStatus | null>(null);
 
 	const currentTrack = usePlaybackStore((s) => s.currentTrack);
 	const queue = usePlaybackStore((s) => s.queue);
@@ -82,6 +86,8 @@ export function App(): ReactElement {
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const controllerRef = useRef<PlayerController | null>(null);
 	const lastLoadedKeyRef = useRef<string>("");
+	const neteaseCookieInputRef = useRef<HTMLTextAreaElement | null>(null);
+	const qqCookieInputRef = useRef<HTMLTextAreaElement | null>(null);
 
 	const positionRef = useRef(positionMs);
 	positionRef.current = positionMs;
@@ -126,6 +132,85 @@ export function App(): ReactElement {
 		setMiniQueue(false);
 		focusSearch();
 	}, [focusSearch, setConsole, setMiniQueue]);
+
+	const setProviderStatus = useCallback((status: ProviderLoginStatus) => {
+		if (status.provider === "netease") setNeteaseStatus(status);
+		else setQqStatus(status);
+	}, []);
+
+	const providerLabel = useCallback((provider: ProviderId) => provider === "netease" ? "网易云" : "QQ 音乐", []);
+
+	const refreshProviderStatus = useCallback(async (provider: ProviderId) => {
+		const client = sidecarClient;
+		if (!client) {
+			showToast("sidecar 未连接，稍后再试");
+			return;
+		}
+		try {
+			const status = await client.loginStatus(provider);
+			setProviderStatus(status);
+			const label = providerLabel(provider);
+			showToast(status.loggedIn ? `${label}已登录: ${status.nickname ?? status.userId ?? "账号"}` : `${label}未登录`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "登录状态读取失败";
+			showToast(message);
+		}
+	}, [providerLabel, setProviderStatus, showToast, sidecarClient]);
+
+	const openLoginModal = useCallback(() => {
+		setLoginModalOpen(true);
+		void refreshProviderStatus("netease");
+		void refreshProviderStatus("qq");
+	}, [refreshProviderStatus]);
+
+	const closeLoginModal = useCallback(() => {
+		setLoginModalOpen(false);
+		if (neteaseCookieInputRef.current) neteaseCookieInputRef.current.value = "";
+		if (qqCookieInputRef.current) qqCookieInputRef.current.value = "";
+	}, []);
+
+	const importProviderCookie = useCallback(async (provider: ProviderId) => {
+		const client = sidecarClient;
+		const input = provider === "netease" ? neteaseCookieInputRef.current : qqCookieInputRef.current;
+		const cookie = input?.value.trim() ?? "";
+		const label = providerLabel(provider);
+		if (!client) {
+			showToast("sidecar 未连接，稍后再试");
+			return;
+		}
+		if (!cookie) {
+			showToast(`请粘贴${label} cookie`);
+			return;
+		}
+		try {
+			await client.setProviderSessionCookie(provider, cookie);
+			if (input) input.value = "";
+			const status = await client.loginStatus(provider);
+			setProviderStatus(status);
+			showToast(status.loggedIn ? `${label}已登录: ${status.nickname ?? status.userId ?? "账号"}` : `${label}会话已保存，但账号态未确认`);
+		} catch (e) {
+			if (input) input.value = "";
+			const message = e instanceof Error ? e.message : "手动导入失败";
+			showToast(message);
+		}
+	}, [providerLabel, setProviderStatus, showToast, sidecarClient]);
+
+	const logoutProvider = useCallback(async (provider: ProviderId) => {
+		const client = sidecarClient;
+		const label = providerLabel(provider);
+		if (!client) {
+			showToast("sidecar 未连接，稍后再试");
+			return;
+		}
+		try {
+			await client.logout(provider);
+			setProviderStatus({ provider, loggedIn: false });
+			showToast(`${label}会话已清除`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "退出登录失败";
+			showToast(message);
+		}
+	}, [providerLabel, setProviderStatus, showToast, sidecarClient]);
 
 	const togglePlayback = useCallback(() => {
 		if (!usePlaybackStore.getState().currentTrack) {
@@ -373,8 +458,10 @@ export function App(): ReactElement {
 			<SearchShell client={sidecarClient} onFocus={focusSearch} onUpload={() => showUnavailable("本地导入会在 Tauri 文件对话框中打开")} />
 			<TopRightControls
 				onHome={goHome}
-				onLogin={() => showUnavailable("登录窗口正在迁移，Netease/QQ 凭证仍需手动注入验证")}
+				onLogin={openLoginModal}
 				onHideCapsule={() => showUnavailable("账号胶囊自动隐藏已记录，登录完成后生效")}
+				loggedIn={!!neteaseStatus?.loggedIn || !!qqStatus?.loggedIn}
+				accountLabel={neteaseStatus?.nickname ?? qqStatus?.nickname ?? neteaseStatus?.userId ?? qqStatus?.userId ?? undefined}
 			/>
 			<BottomControlsHost
 				visible={consoleVisible}
@@ -409,6 +496,47 @@ export function App(): ReactElement {
 				volume={volume}
 				muted={muted}
 			/>
+			{loginModalOpen ? (
+				<div id="login-modal" className="modal-mask show" role="presentation" onClick={(event) => {
+					if (event.target === event.currentTarget) closeLoginModal();
+				}}>
+					<div className="modal dual-login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+						<h2 id="login-modal-title">音乐账号</h2>
+						<div id="login-modal-desc" className="desc">
+							手动导入 cookie 只会发送到本机 sidecar 运行时会话，不会写入前端状态、仓库或 diagnostics。
+						</div>
+						<div className="manual-cookie-grid">
+							<div className="manual-cookie-panel">
+								<div className="manual-cookie-title">网易云</div>
+								<textarea ref={neteaseCookieInputRef} id="netease-cookie-input" className="manual-cookie-input" spellCheck={false} autoComplete="off" placeholder="MUSIC_U=...; __csrf=..." />
+								<div className="account-status-line">
+									{neteaseStatus?.loggedIn ? `已登录 ${neteaseStatus.nickname ?? neteaseStatus.userId ?? ""}` : "未确认登录"}
+								</div>
+								<div className="account-mini-actions">
+									<button className="modal-btn" type="button" onClick={() => void refreshProviderStatus("netease")}>刷新</button>
+									<button className="modal-btn" type="button" onClick={() => void logoutProvider("netease")}>退出</button>
+									<button className="modal-btn primary" type="button" onClick={() => void importProviderCookie("netease")}>导入</button>
+								</div>
+							</div>
+							<div className="manual-cookie-panel">
+								<div className="manual-cookie-title">QQ 音乐</div>
+								<textarea ref={qqCookieInputRef} id="qq-cookie-input" className="manual-cookie-input" spellCheck={false} autoComplete="off" placeholder="uin=...; qm_keyst=...; qqmusic_key=..." />
+								<div className="account-status-line">
+									{qqStatus?.loggedIn ? `已登录 ${qqStatus.nickname ?? qqStatus.userId ?? ""}` : "未确认登录"}
+								</div>
+								<div className="account-mini-actions">
+									<button className="modal-btn" type="button" onClick={() => void refreshProviderStatus("qq")}>刷新</button>
+									<button className="modal-btn" type="button" onClick={() => void logoutProvider("qq")}>退出</button>
+									<button className="modal-btn primary" type="button" onClick={() => void importProviderCookie("qq")}>导入</button>
+								</div>
+							</div>
+						</div>
+						<div className="btn-row">
+							<button className="modal-btn" type="button" onClick={closeLoginModal}>关闭</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 			<div id="toast" className={toast ? "show" : ""} role="status" aria-live="polite">{toast ?? ""}</div>
 		</>
 	);

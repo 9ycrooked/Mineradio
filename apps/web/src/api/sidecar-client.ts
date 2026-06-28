@@ -10,6 +10,10 @@ import {
 	ProviderId,
 	ProviderSessionCookieAck,
 	ProviderSessionCookieAckSchema,
+	ProviderLoginStatus,
+	ProviderLoginStatusSchema,
+	ProviderLogoutAck,
+	ProviderLogoutAckSchema,
 	SongUrlResultSchema,
 	TrackArraySchema,
 	Track,
@@ -231,6 +235,22 @@ export class SidecarClient {
 			"DELETE",
 			`/providers/${provider}/session-cookie`,
 			ProviderSessionCookieAckSchema,
+		);
+	}
+
+	async loginStatus(provider: ProviderId): Promise<ProviderLoginStatus> {
+		return this.request(
+			"GET",
+			`/providers/${provider}/login-status`,
+			ProviderLoginStatusSchema,
+		);
+	}
+
+	async logout(provider: ProviderId): Promise<ProviderLogoutAck> {
+		return this.request(
+			"POST",
+			`/providers/${provider}/logout`,
+			ProviderLogoutAckSchema,
 		);
 	}
 }

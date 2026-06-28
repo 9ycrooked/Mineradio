@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ProviderSessionCookieAckSchema } from "./session";
+import { ProviderLoginStatusSchema, ProviderLogoutAckSchema, ProviderSessionCookieAckSchema } from "./session";
 
 test("ProviderSessionCookieAckSchema accepts provider + stored ack without cookie", () => {
   const parsed = ProviderSessionCookieAckSchema.parse({
@@ -21,4 +21,27 @@ test("ProviderSessionCookieAckSchema rejects cookie-bearing responses", () => {
   });
 
   expect(parsed.success).toBe(false);
+});
+
+test("ProviderLoginStatusSchema accepts profile summaries without cookie", () => {
+  const parsed = ProviderLoginStatusSchema.parse({
+    provider: "netease",
+    loggedIn: true,
+    nickname: "tester",
+    userId: "42",
+  });
+
+  expect(parsed.loggedIn).toBe(true);
+  expect(JSON.stringify(parsed)).not.toContain("MUSIC_U");
+  expect(JSON.stringify(parsed)).not.toContain("cookie");
+});
+
+test("ProviderLogoutAckSchema accepts logout ack without auth material", () => {
+  const parsed = ProviderLogoutAckSchema.parse({
+    provider: "netease",
+    loggedOut: true,
+  });
+
+  expect(parsed.loggedOut).toBe(true);
+  expect(JSON.stringify(parsed)).not.toContain("cookie");
 });

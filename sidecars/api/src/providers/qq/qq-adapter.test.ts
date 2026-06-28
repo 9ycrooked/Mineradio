@@ -77,6 +77,7 @@ test("search calls qq search with key/pageNo/pageSize/t=0 and maps body.data.lis
   expect(lastQuery["pageSize"]).toBe(5);
   expect(lastQuery["pageNo"]).toBe(1);
   expect(lastQuery["t"]).toBe(0);
+  expect(lastQuery["raw"]).toBe(1);
   expect(out.length).toBe(1);
   const t = out[0];
   expect(t.provider).toBe("qq");
@@ -88,6 +89,67 @@ test("search calls qq search with key/pageNo/pageSize/t=0 and maps body.data.lis
   expect(t.album).toBe("album one");
   expect(t.coverUrl).toBe("https://y.gtimg.cn/music/photo_new/T002R300x300M000albMid.jpg");
   expect(t.durationMs).toBe(180000);
+});
+
+test("search maps raw qq response body data.song.list when package formatter is brittle", async () => {
+  const deps = noopDeps({
+    search: async () => ({
+      body: {
+        code: 0,
+        data: {
+          keyword: "x",
+          song: {
+            list: [
+              {
+                songmid: "rawMid",
+                songname: "raw song",
+                singer: [{ name: "raw art" }],
+                albumname: "raw album",
+                interval: 99
+              }
+            ]
+          }
+        }
+      }
+    })
+  });
+  const adapter = createQqAdapter(deps);
+  const out = await adapter.search({ keyword: "x", limit: 5 });
+  expect(out.length).toBe(1);
+  expect(out[0].id).toBe("rawMid");
+  expect(out[0].title).toBe("raw song");
+  expect(out[0].artists).toEqual(["raw art"]);
+});
+
+test("search falls back to smartbox when qq package search route fails", async () => {
+  let fallbackKeyword = "";
+  let fallbackLimit = 0;
+  const deps = noopDeps({
+    search: async () => {
+      throw new TypeError("package formatter failed");
+    },
+    smartboxSearch: async (keyword, limit) => {
+      fallbackKeyword = keyword;
+      fallbackLimit = limit;
+      return [
+        {
+          mid: "smartMid",
+          name: "smart song",
+          singer: "smart art",
+          pic: "http://y.gtimg.cn/music/photo_new/T002R180x180M000abc.jpg"
+        }
+      ];
+    }
+  });
+  const adapter = createQqAdapter(deps);
+  const out = await adapter.search({ keyword: "x", limit: 5 });
+  expect(fallbackKeyword).toBe("x");
+  expect(fallbackLimit).toBe(5);
+  expect(out.length).toBe(1);
+  expect(out[0].id).toBe("smartMid");
+  expect(out[0].title).toBe("smart song");
+  expect(out[0].artists).toEqual(["smart art"]);
+  expect(out[0].coverUrl.startsWith("https://")).toBe(true);
 });
 
 test("songUrl without cookie throws ProviderError LOGIN_REQUIRED", async () => {

@@ -290,6 +290,50 @@ test("clearProviderSessionCookie DELETEs cookie and accepts clear ack", async ()
 	});
 });
 
+test("loginStatus parses a cookie-free provider profile summary", async () => {
+	const fake = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = typeof input === "string" ? input : input.toString();
+		expect(url).toContain("/providers/netease/login-status");
+		expect(init?.method).toBe("GET");
+		return jsonResponse({
+			ok: true,
+			data: {
+				provider: "netease",
+				loggedIn: true,
+				nickname: "tester",
+				userId: "42",
+			},
+		});
+	}) as typeof fetch;
+
+	await withFetch(fake, async () => {
+		const client = new SidecarClient(BASE);
+		const status = await client.loginStatus("netease");
+		expect(status.loggedIn).toBe(true);
+		expect(status.nickname).toBe("tester");
+		expect(JSON.stringify(status)).not.toContain("MUSIC_U");
+		expect(JSON.stringify(status)).not.toContain("cookie");
+	});
+});
+
+test("logout posts to provider logout and parses ack", async () => {
+	const fake = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = typeof input === "string" ? input : input.toString();
+		expect(url).toContain("/providers/netease/logout");
+		expect(init?.method).toBe("POST");
+		return jsonResponse({
+			ok: true,
+			data: { provider: "netease", loggedOut: true },
+		});
+	}) as typeof fetch;
+
+	await withFetch(fake, async () => {
+		const client = new SidecarClient(BASE);
+		const ack = await client.logout("netease");
+		expect(ack).toEqual({ provider: "netease", loggedOut: true });
+	});
+});
+
 test("songUrl 500 throws SidecarClientError", async () => {
 	const fake = (async () => new Response("", { status: 500 })) as typeof fetch;
 	await withFetch(fake, async () => {

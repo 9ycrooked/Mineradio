@@ -44,6 +44,7 @@ export interface QqClientDeps {
   loginStatus: QqCall;
   logout: QqCall;
   getConfig(): { cookie?: string };
+  smartboxSearch?: (keyword: string, limit: number) => Promise<unknown[]>;
 }
 
 function cast(fn: unknown): QqCall {
@@ -58,7 +59,8 @@ const defaultDeps: QqClientDeps = {
   playlistDetail: cast(qqClient.playlistDetail),
   loginStatus: cast(qqClient.loginStatus),
   logout: cast(qqClient.logout),
-  getConfig
+  getConfig,
+  smartboxSearch: fallbackSmartboxSearch
 };
 
 function asObj(v: unknown): Record<string, unknown> | null {
@@ -66,6 +68,49 @@ function asObj(v: unknown): Record<string, unknown> | null {
     return v as Record<string, unknown>;
   }
   return null;
+}
+
+function readQqSearchList(body: unknown): unknown[] {
+  const root = asObj(body);
+  if (!root) return [];
+  if (Array.isArray(root.list)) return root.list;
+
+  const data = asObj(root.data);
+  if (data && Array.isArray(data.list)) return data.list;
+
+  const song = asObj(data?.song) ?? asObj(root.song);
+  if (song && Array.isArray(song.list)) return song.list;
+
+  return [];
+}
+
+async function fallbackSmartboxSearch(keyword: string, limit: number): Promise<unknown[]> {
+  const params = new URLSearchParams({
+    key: keyword,
+    format: "json",
+    g_tk: "5381"
+  });
+  const res = await fetch(`https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?${params.toString()}`, {
+    headers: {
+      Referer: "https://y.qq.com/",
+      "user-agent": "Mozilla/5.0"
+    }
+  });
+  if (!res.ok) {
+    throw new ProviderError("qq", "UNAVAILABLE", `qq smartbox search failed with status ${res.status}`);
+  }
+  const text = await res.text();
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new ProviderError("qq", "UNAVAILABLE", "qq smartbox search returned invalid json");
+  }
+  const root = asObj(payload);
+  const data = asObj(root?.data);
+  const song = asObj(data?.song);
+  const list = song && Array.isArray(song.itemlist) ? song.itemlist : [];
+  return list.slice(0, Math.max(0, limit));
 }
 
 function cfgOf(deps: QqClientDeps): { cookie?: string } {
@@ -80,12 +125,16 @@ export function createQqAdapter(
     id: "qq",
     async search({ keyword, limit }): Promise<Track[]> {
       const cfg = cfgOf(deps);
-      const resp = await deps.search(
-        { key: keyword, pageNo: 1, pageSize: limit, t: 0 },
-        cfg
-      );
-      const body = asObj(resp.body);
-      const listRaw = body && Array.isArray(body.list) ? body.list : [];
+      let listRaw: unknown[] = [];
+      if (deps.smartboxSearch) {
+        listRaw = await deps.smartboxSearch(keyword, limit);
+      } else {
+        const resp = await deps.search(
+          { key: keyword, pageNo: 1, pageSize: limit, t: 0, raw: 1 },
+          cfg
+        );
+        listRaw = readQqSearchList(resp.body);
+      }
       return (listRaw as unknown[]).map(s =>
         mapQqSongToTrack(s as QqSong)
       );
