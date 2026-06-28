@@ -1,4 +1,8 @@
 use std::path::{Path, PathBuf};
+use std::process::Child;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+pub const SIDECAR_LOG_FILE_NAME: &str = "sidecar-runtime.log";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct HealthInfo {
@@ -6,6 +10,70 @@ pub struct HealthInfo {
     pub app_version: String,
     pub api_version: String,
     pub schema_version: String,
+    pub providers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SidecarPhase {
+    Starting,
+    Ready,
+    Recovering,
+    Stopped,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidecarRuntimeSnapshot {
+    pub phase: SidecarPhase,
+    pub base_url: String,
+    pub pid: Option<u32>,
+    pub restarts: u32,
+    pub last_error: Option<String>,
+    pub last_health_ok_ms: Option<u64>,
+    pub providers: Vec<String>,
+    pub log_path: String,
+}
+
+#[derive(Debug)]
+pub struct SidecarRuntimeState {
+    pub phase: SidecarPhase,
+    pub base_url: String,
+    pub child: Option<Child>,
+    pub restarts: u32,
+    pub last_error: Option<String>,
+    pub last_health_ok_ms: Option<u64>,
+    pub providers: Vec<String>,
+    pub log_path: PathBuf,
+}
+
+impl SidecarRuntimeState {
+    pub fn new(base_url: String, log_path: PathBuf) -> Self {
+        Self {
+            phase: SidecarPhase::Starting,
+            base_url,
+            child: None,
+            restarts: 0,
+            last_error: None,
+            last_health_ok_ms: None,
+            providers: Vec::new(),
+            log_path,
+        }
+    }
+
+    pub fn snapshot(&self) -> SidecarRuntimeSnapshot {
+        SidecarRuntimeSnapshot {
+            phase: self.phase.clone(),
+            base_url: self.base_url.clone(),
+            pid: self.child.as_ref().map(Child::id),
+            restarts: self.restarts,
+            last_error: self.last_error.clone(),
+            last_health_ok_ms: self.last_health_ok_ms,
+            providers: self.providers.clone(),
+            log_path: self.log_path.to_string_lossy().to_string(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -31,6 +99,86 @@ impl std::fmt::Display for SidecarError {
 
 impl std::error::Error for SidecarError {}
 
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
+}
+
+pub fn sidecar_log_path(log_dir: &Path) -> PathBuf {
+    log_dir.join(SIDECAR_LOG_FILE_NAME)
+}
+
+pub fn sidecar_runtime_mark_spawned(
+    state: &mut SidecarRuntimeState,
+    child: Child,
+) -> Option<Child> {
+    state.phase = SidecarPhase::Starting;
+    state.last_error = None;
+    state.child.replace(child)
+}
+
+pub fn sidecar_runtime_mark_ready(
+    state: &mut SidecarRuntimeState,
+    health: HealthInfo,
+    at_ms: u64,
+) {
+    state.phase = SidecarPhase::Ready;
+    state.last_error = None;
+    state.last_health_ok_ms = Some(at_ms);
+    state.providers = health.providers;
+}
+
+pub fn sidecar_runtime_mark_start_failed(state: &mut SidecarRuntimeState, error: &SidecarError) {
+    state.phase = SidecarPhase::Error;
+    state.last_error = Some(error.to_string());
+}
+
+pub fn sidecar_runtime_mark_health_failed(state: &mut SidecarRuntimeState, error: &SidecarError) {
+    state.phase = SidecarPhase::Recovering;
+    state.last_error = Some(error.to_string());
+}
+
+pub fn sidecar_runtime_mark_restarting(state: &mut SidecarRuntimeState) {
+    state.phase = SidecarPhase::Recovering;
+    state.restarts = state.restarts.saturating_add(1);
+}
+
+pub fn sidecar_runtime_child_exited(state: &mut SidecarRuntimeState) -> Result<bool, SidecarError> {
+    let Some(child) = state.child.as_mut() else {
+        return Ok(false);
+    };
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            state.child = None;
+            state.phase = SidecarPhase::Recovering;
+            state.last_error = Some(format!("sidecar exited with status {}", status));
+            Ok(true)
+        }
+        Ok(None) => Ok(false),
+        Err(e) => {
+            state.phase = SidecarPhase::Error;
+            state.last_error = Some(e.to_string());
+            Err(SidecarError::Io(e.to_string()))
+        }
+    }
+}
+
+pub fn sidecar_runtime_mark_stopped(state: &mut SidecarRuntimeState) -> Option<Child> {
+    state.phase = SidecarPhase::Stopped;
+    state.child.take()
+}
+
+pub fn terminate_sidecar_child(child: Option<Child>) -> bool {
+    let Some(mut child) = child else {
+        return false;
+    };
+    let _ = child.kill();
+    let _ = child.wait();
+    true
+}
+
 pub fn allocate_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .expect("failed to bind ephemeral port for sidecar allocation");
@@ -55,6 +203,7 @@ pub fn build_sidecar_command(
     cmd.env("MINERADIO_APP_DATA_DIR", app_data_dir);
     cmd.env("MINERADIO_LOG_DIR", log_dir);
     cmd.env("MINERADIO_APP_VERSION", app_version);
+    cmd.env("MINERADIO_SIDECAR_LOG_FILE", sidecar_log_path(log_dir));
     cmd
 }
 
@@ -69,6 +218,26 @@ pub fn workspace_root_from_manifest_dir() -> PathBuf {
 
 pub fn spawn_sidecar(mut cmd: std::process::Command) -> Result<std::process::Child, SidecarError> {
     cmd.spawn().map_err(|e| SidecarError::Io(e.to_string()))
+}
+
+pub fn spawn_sidecar_into_runtime(
+    state: &mut SidecarRuntimeState,
+    cmd: std::process::Command,
+    wait_deadline: Duration,
+) -> Result<(), SidecarError> {
+    let child = spawn_sidecar(cmd)?;
+    let orphan = sidecar_runtime_mark_spawned(state, child);
+    terminate_sidecar_child(orphan);
+    match wait_for_health(&state.base_url, wait_deadline) {
+        Ok(health) => {
+            sidecar_runtime_mark_ready(state, health, now_ms());
+            Ok(())
+        }
+        Err(e) => {
+            sidecar_runtime_mark_health_failed(state, &e);
+            Err(e)
+        }
+    }
 }
 
 pub fn parse_health_response(body: &[u8]) -> Result<HealthInfo, SidecarError> {
@@ -97,11 +266,20 @@ pub fn parse_health_response(body: &[u8]) -> Result<HealthInfo, SidecarError> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| SidecarError::Parse("missing schemaVersion".into()))?
         .to_string();
+    let providers = match value.get("providers") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|item| item.as_str().map(|s| s.to_string()))
+            .collect(),
+        // Older sidecar builds omit the providers array; treat as empty.
+        _ => Vec::new(),
+    };
     Ok(HealthInfo {
         ok,
         app_version,
         api_version,
         schema_version,
+        providers,
     })
 }
 
@@ -170,7 +348,7 @@ fn try_health_once(host: &str, port: u16) -> Result<HealthInfo, SidecarError> {
 
 pub fn wait_for_health(
     base_url: &str,
-    deadline: std::time::Duration,
+    deadline: Duration,
 ) -> Result<HealthInfo, SidecarError> {
     let (host, port) = parse_base_url(base_url)?;
     let start = std::time::Instant::now();
@@ -181,7 +359,7 @@ pub fn wait_for_health(
                 if start.elapsed() >= deadline {
                     return Err(SidecarError::Timeout);
                 }
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                std::thread::sleep(Duration::from_millis(200));
             }
         }
     }
@@ -233,16 +411,104 @@ mod tests {
         assert_eq!(get("MINERADIO_APP_VERSION"), Some("1.2.3".to_string()));
         assert_eq!(get("MINERADIO_APP_DATA_DIR"), Some("/tmp/data".to_string()));
         assert_eq!(get("MINERADIO_LOG_DIR"), Some("/tmp/logs".to_string()));
+        assert_eq!(
+            get("MINERADIO_SIDECAR_LOG_FILE"),
+            Some("/tmp/logs/sidecar-runtime.log".to_string())
+        );
+    }
+
+    #[test]
+    fn sidecar_log_path_uses_runtime_log_file_name() {
+        assert_eq!(
+            sidecar_log_path(Path::new("/tmp/mineradio-logs")),
+            PathBuf::from("/tmp/mineradio-logs/sidecar-runtime.log")
+        );
+    }
+
+    #[test]
+    fn sidecar_runtime_tracks_ready_health_snapshot() {
+        let mut runtime = SidecarRuntimeState::new(
+            "http://127.0.0.1:38123".to_string(),
+            PathBuf::from("/tmp/logs/sidecar-runtime.log"),
+        );
+        sidecar_runtime_mark_ready(
+            &mut runtime,
+            HealthInfo {
+                ok: true,
+                app_version: "0.1.0".to_string(),
+                api_version: "0.1.0".to_string(),
+                schema_version: "0.1.0".to_string(),
+                providers: vec!["netease".to_string(), "qq".to_string()],
+            },
+            123_456,
+        );
+
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.phase, SidecarPhase::Ready);
+        assert_eq!(snapshot.base_url, "http://127.0.0.1:38123");
+        assert_eq!(snapshot.pid, None);
+        assert_eq!(snapshot.restarts, 0);
+        assert_eq!(snapshot.last_error, None);
+        assert_eq!(snapshot.last_health_ok_ms, Some(123_456));
+        assert_eq!(snapshot.providers, vec!["netease".to_string(), "qq".to_string()]);
+        assert_eq!(snapshot.log_path, "/tmp/logs/sidecar-runtime.log");
+    }
+
+    #[test]
+    fn sidecar_runtime_records_failures_and_restart_intent() {
+        let mut runtime = SidecarRuntimeState::new(
+            "http://127.0.0.1:38123".to_string(),
+            PathBuf::from("/tmp/logs/sidecar-runtime.log"),
+        );
+
+        sidecar_runtime_mark_start_failed(&mut runtime, &SidecarError::Io("spawn failed".into()));
+        assert_eq!(runtime.phase, SidecarPhase::Error);
+        assert_eq!(runtime.last_error.as_deref(), Some("io error: spawn failed"));
+
+        sidecar_runtime_mark_health_failed(&mut runtime, &SidecarError::Timeout);
+        assert_eq!(runtime.phase, SidecarPhase::Recovering);
+        assert_eq!(runtime.last_error.as_deref(), Some("sidecar health check timed out"));
+
+        sidecar_runtime_mark_restarting(&mut runtime);
+        assert_eq!(runtime.phase, SidecarPhase::Recovering);
+        assert_eq!(runtime.restarts, 1);
+    }
+
+    #[test]
+    fn sidecar_runtime_stop_without_child_is_idempotent() {
+        let mut runtime = SidecarRuntimeState::new(
+            "http://127.0.0.1:38123".to_string(),
+            PathBuf::from("/tmp/logs/sidecar-runtime.log"),
+        );
+        assert!(sidecar_runtime_mark_stopped(&mut runtime).is_none());
+        assert_eq!(runtime.phase, SidecarPhase::Stopped);
+        assert!(sidecar_runtime_mark_stopped(&mut runtime).is_none());
+        assert_eq!(runtime.phase, SidecarPhase::Stopped);
     }
 
     #[test]
     fn parse_health_response_ok_body() {
-        let body = br#"{"ok":true,"appVersion":"x","apiVersion":"0.1.0","schemaVersion":"0.1.0","providers":[]}"#;
+        let body = br#"{"ok":true,"appVersion":"x","apiVersion":"0.1.0","schemaVersion":"0.1.0","providers":["netease","qq"]}"#;
         let info = parse_health_response(body).expect("should parse");
         assert!(info.ok);
         assert_eq!(info.app_version, "x");
         assert_eq!(info.api_version, "0.1.0");
         assert_eq!(info.schema_version, "0.1.0");
+        assert_eq!(info.providers, vec!["netease".to_string(), "qq".to_string()]);
+    }
+
+    #[test]
+    fn parse_health_response_tolerates_missing_providers() {
+        let body = br#"{"ok":true,"appVersion":"x","apiVersion":"0.1.0","schemaVersion":"0.1.0"}"#;
+        let info = parse_health_response(body).expect("should parse");
+        assert!(info.providers.is_empty());
+    }
+
+    #[test]
+    fn parse_health_response_tolerates_non_array_providers() {
+        let body = br#"{"ok":true,"appVersion":"x","apiVersion":"0.1.0","schemaVersion":"0.1.0","providers":"netease"}"#;
+        let info = parse_health_response(body).expect("should parse");
+        assert!(info.providers.is_empty());
     }
 
     #[test]

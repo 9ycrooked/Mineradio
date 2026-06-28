@@ -6,6 +6,19 @@ export interface RuntimeConfig {
 	updaterPublicKeyConfigured: boolean;
 }
 
+export type SidecarPhase = "starting" | "ready" | "recovering" | "stopped" | "error";
+
+export interface SidecarStatus {
+	phase: SidecarPhase;
+	baseUrl: string;
+	pid: number | null;
+	restarts: number;
+	lastError: string | null;
+	lastHealthOkMs: number | null;
+	providers: string[];
+	logPath: string;
+}
+
 export type Unlisten = () => void;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -26,6 +39,17 @@ interface RawRuntimeConfig {
 	app_version: string;
 	schema_version: string;
 	updater_public_key_configured: boolean;
+}
+
+interface RawSidecarStatus {
+	phase?: SidecarPhase;
+	baseUrl?: string;
+	pid?: number | null;
+	restarts?: number;
+	lastError?: string | null;
+	lastHealthOkMs?: number | null;
+	providers?: string[];
+	logPath?: string;
 }
 
 export function isTauriRuntime(): boolean {
@@ -67,6 +91,19 @@ function placeholderRuntimeConfig(): RuntimeConfig {
 	};
 }
 
+function placeholderSidecarStatus(): SidecarStatus {
+	return {
+		phase: "stopped",
+		baseUrl: "",
+		pid: null,
+		restarts: 0,
+		lastError: null,
+		lastHealthOkMs: null,
+		providers: [],
+		logPath: "",
+	};
+}
+
 function cancelledExportJsonResult(): ExportJsonFileResult {
 	return {
 		cancelled: true,
@@ -100,6 +137,28 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
 		};
 	} catch {
 		return placeholderRuntimeConfig();
+	}
+}
+
+export async function getSidecarStatus(): Promise<SidecarStatus> {
+	if (!isTauriRuntime()) {
+		return placeholderSidecarStatus();
+	}
+	try {
+		const raw = await invokeTauriCommand<RawSidecarStatus>("get_sidecar_status");
+		if (!raw) return placeholderSidecarStatus();
+		return {
+			phase: raw.phase ?? "stopped",
+			baseUrl: raw.baseUrl ?? "",
+			pid: raw.pid ?? null,
+			restarts: raw.restarts ?? 0,
+			lastError: raw.lastError ?? null,
+			lastHealthOkMs: raw.lastHealthOkMs ?? null,
+			providers: Array.isArray(raw.providers) ? raw.providers : [],
+			logPath: raw.logPath ?? "",
+		};
+	} catch {
+		return placeholderSidecarStatus();
 	}
 }
 

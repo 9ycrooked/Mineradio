@@ -28,6 +28,9 @@
     "active": true,
     "targets": "all",
     "category": "Music",
+    "icon": [
+      "icons/icon.ico"
+    ],
     "shortDescription": "Mineradio Tauri rewrite shell",
     "longDescription": "A GPL-3.0 Tauri rewrite shell for Mineradio."
   },

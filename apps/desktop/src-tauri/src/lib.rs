@@ -3,7 +3,16 @@ mod paths;
 mod sidecar;
 mod updater;
 
-use std::{process::Child, sync::Mutex};
+use std::{
+    path::PathBuf,
+    process::Child,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    time::Duration,
+};
+use tauri::Manager;
 
 #[derive(serde::Serialize, Clone)]
 pub struct RuntimeConfig {
@@ -69,6 +78,8 @@ impl Drop for DesktopLyricsPollerChild {
 pub struct AppState {
     pub config: RuntimeConfig,
     pub desktop_lyrics: Mutex<DesktopLyricsRuntimeState>,
+    pub sidecar: Mutex<sidecar::SidecarRuntimeState>,
+    pub sidecar_supervisor_running: AtomicBool,
 }
 
 impl AppState {
@@ -78,10 +89,11 @@ impl AppState {
         app_version: String,
         schema_version: String,
         updater_public_key_configured: bool,
+        sidecar_log_path: PathBuf,
     ) -> Self {
         Self {
             config: RuntimeConfig {
-                sidecar_base_url,
+                sidecar_base_url: sidecar_base_url.clone(),
                 app_data_dir,
                 app_version,
                 schema_version,
@@ -97,8 +109,58 @@ impl AppState {
                 poller_desired: false,
                 poller_child: None,
             }),
+            sidecar: Mutex::new(sidecar::SidecarRuntimeState::new(
+                sidecar_base_url,
+                sidecar_log_path,
+            )),
+            sidecar_supervisor_running: AtomicBool::new(true),
         }
     }
+}
+
+fn build_and_start_sidecar(
+    state: &AppState,
+    port: u16,
+    app_data_dir: &std::path::Path,
+    log_dir: &std::path::Path,
+    app_version: &str,
+) -> Result<(), sidecar::SidecarError> {
+    let cmd = sidecar::build_sidecar_command(port, app_data_dir, log_dir, app_version);
+    let mut runtime = state
+        .sidecar
+        .lock()
+        .map_err(|e| sidecar::SidecarError::Io(e.to_string()))?;
+    sidecar::spawn_sidecar_into_runtime(&mut runtime, cmd, Duration::from_secs(2))
+}
+
+fn start_sidecar_supervisor(
+    app: tauri::AppHandle,
+    port: u16,
+    app_data_dir: PathBuf,
+    log_dir: PathBuf,
+    app_version: String,
+) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(3));
+        let state = app.state::<AppState>();
+        if !state.sidecar_supervisor_running.load(Ordering::Relaxed) {
+            break;
+        }
+        let should_restart = match state.sidecar.lock() {
+            Ok(mut runtime) => match sidecar::sidecar_runtime_child_exited(&mut runtime) {
+                Ok(exited) => exited,
+                Err(_) => false,
+            },
+            Err(_) => false,
+        };
+        if !should_restart {
+            continue;
+        }
+        if let Ok(mut runtime) = state.sidecar.lock() {
+            sidecar::sidecar_runtime_mark_restarting(&mut runtime);
+        }
+        let _ = build_and_start_sidecar(&state, port, &app_data_dir, &log_dir, &app_version);
+    });
 }
 
 fn updater_public_key_configured_from_plugin_config(
@@ -124,6 +186,7 @@ pub fn run() {
 
     let port = sidecar::allocate_port();
     let base_url = format!("http://127.0.0.1:{}", port);
+    let sidecar_log_path = sidecar::sidecar_log_path(&log_dir);
 
     let state = AppState::new(
         base_url.clone(),
@@ -131,6 +194,7 @@ pub fn run() {
         app_version.clone(),
         schema_version.clone(),
         updater_public_key_configured,
+        sidecar_log_path,
     );
 
     let setup_app_version = app_version.clone();
@@ -143,6 +207,7 @@ pub fn run() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::get_runtime_config,
+            commands::get_sidecar_status,
             commands::get_updater_status,
             commands::check_for_update,
             commands::window_minimize,
@@ -164,29 +229,53 @@ pub fn run() {
             commands::login_netease_close_window,
             commands::login_qq_close_window
         ])
-        .setup(move |_app| {
-            let cmd = sidecar::build_sidecar_command(
+        .setup(move |app| {
+            // NOTE: spawn + health-wait are best-effort. This setup closure only
+            // runs under a real `tauri::Builder` app (`tauri dev`), never from
+            // cargo tests (tests call only the pure module functions).
+            let state = app.state::<AppState>();
+            if let Err(e) = build_and_start_sidecar(
+                &state,
                 port,
                 &setup_app_data,
                 &setup_log_dir,
                 &setup_app_version,
-            );
-            // NOTE: spawn + health-wait are best-effort. This setup closure only
-            // runs under a real `tauri::Builder` app (`tauri dev`), never from
-            // cargo tests (tests call only the pure module functions).
-            match sidecar::spawn_sidecar(cmd) {
-                Ok(_child) => {
-                    if let Err(e) =
-                        sidecar::wait_for_health(&base_url, std::time::Duration::from_secs(2))
-                    {
-                        eprintln!("sidecar health wait failed: {}", e);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("sidecar spawn failed: {}", e);
+            ) {
+                let mut runtime = state.sidecar.lock().map_err(|lock| lock.to_string())?;
+                if runtime.child.is_none() {
+                    sidecar::sidecar_runtime_mark_start_failed(&mut runtime, &e);
                 }
             }
+            start_sidecar_supervisor(
+                app.handle().clone(),
+                port,
+                setup_app_data.clone(),
+                setup_log_dir.clone(),
+                setup_app_version.clone(),
+            );
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if !matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                return;
+            }
+            if window.label() != commands::labels::MAIN {
+                return;
+            }
+            let state = window.state::<AppState>();
+            state.sidecar_supervisor_running.store(false, Ordering::Relaxed);
+            let sidecar_child = state
+                .sidecar
+                .lock()
+                .ok()
+                .and_then(|mut runtime| sidecar::sidecar_runtime_mark_stopped(&mut runtime));
+            sidecar::terminate_sidecar_child(sidecar_child);
+
+            let lyrics_child = state.desktop_lyrics.lock().ok().and_then(|mut lyrics| {
+                let (_, child) = commands::desktop_lyrics_stop_middle_click_poller_state(&mut lyrics);
+                child
+            });
+            commands::desktop_lyrics_terminate_poller_child(lyrics_child);
         })
         .run(context)
         .expect("failed to run Mineradio Tauri shell");
@@ -204,6 +293,7 @@ mod tests {
             "0.1.0".into(),
             "0.1.0".into(),
             false,
+            std::path::PathBuf::from("/logs/sidecar-runtime.log"),
         );
         assert_eq!(s.config.sidecar_base_url, "http://127.0.0.1:1");
         assert_eq!(s.config.app_data_dir, "/data");
@@ -219,6 +309,11 @@ mod tests {
         assert!(!lyrics.poller_starting);
         assert!(!lyrics.poller_desired);
         assert!(lyrics.poller_child.is_none());
+        let sidecar = s.sidecar.lock().expect("sidecar state");
+        assert_eq!(sidecar.phase, sidecar::SidecarPhase::Starting);
+        assert_eq!(sidecar.base_url, "http://127.0.0.1:1");
+        assert!(sidecar.child.is_none());
+        assert_eq!(sidecar.log_path, std::path::PathBuf::from("/logs/sidecar-runtime.log"));
     }
 
     #[test]

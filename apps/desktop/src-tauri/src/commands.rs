@@ -4,13 +4,14 @@
 //! the frontend sends data or receives parsed JSON, while paths come only from
 //! the native open/save dialog result.
 
-use crate::{updater, AppState, DesktopLyricsPollerChild, DesktopLyricsRuntimeState};
+use crate::{
+    sidecar, updater, AppState, DesktopLyricsPollerChild, DesktopLyricsRuntimeState,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     Emitter, Manager, PhysicalPosition, Position, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -50,6 +51,14 @@ pub mod labels {
 #[tauri::command]
 pub fn get_runtime_config(state: tauri::State<'_, AppState>) -> crate::RuntimeConfig {
     state.config.clone()
+}
+
+#[tauri::command]
+pub fn get_sidecar_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<sidecar::SidecarRuntimeSnapshot, String> {
+    let runtime = state.sidecar.lock().map_err(|e| e.to_string())?;
+    Ok(runtime.snapshot())
 }
 
 #[tauri::command]
@@ -572,7 +581,7 @@ pub fn desktop_lyrics_stop_middle_click_poller_state(
     (was_running, child)
 }
 
-fn desktop_lyrics_terminate_poller_child(child: Option<DesktopLyricsPollerChild>) -> bool {
+pub fn desktop_lyrics_terminate_poller_child(child: Option<DesktopLyricsPollerChild>) -> bool {
     let Some(child) = child else {
         return false;
     };
@@ -634,7 +643,6 @@ fn ensure_desktop_lyrics_window(app: &tauri::AppHandle) -> Result<WebviewWindow,
         WebviewUrl::App(desktop_lyrics_window_url().into()),
     )
     .title("Mineradio Desktop Lyrics")
-    .transparent(true)
     .decorations(false)
     .always_on_top(true)
     .resizable(false)
@@ -1059,6 +1067,9 @@ fn desktop_lyrics_apply_native_middle_click_to_window(
 
 #[cfg(target_os = "windows")]
 fn desktop_lyrics_spawn_middle_click_poller(app: tauri::AppHandle) -> Result<Child, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
     let script = r#"
 $ErrorActionPreference = "SilentlyContinue"
 Add-Type @"
@@ -1120,24 +1131,26 @@ fn desktop_lyrics_spawn_middle_click_poller(_app: tauri::AppHandle) -> Result<Ch
     Err("DESKTOP_LYRICS_POLLER_UNSUPPORTED".into())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn desktop_lyrics_start_middle_click_poller(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = app;
-        let _ = state;
+    let _ = app;
+    let _ = state;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn desktop_lyrics_start_middle_click_poller(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
+    if !desktop_lyrics_start_middle_click_poller_state(&mut lyrics, None) {
         return Ok(());
     }
-
-    #[cfg(target_os = "windows")]
-    {
-        let mut lyrics = state.desktop_lyrics.lock().map_err(|e| e.to_string())?;
-        if !desktop_lyrics_start_middle_click_poller_state(&mut lyrics, None) {
-            return Ok(());
-        }
-    }
+    drop(lyrics);
 
     let child = match desktop_lyrics_spawn_middle_click_poller(app) {
         Ok(child) => DesktopLyricsPollerChild::new(child),
