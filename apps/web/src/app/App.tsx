@@ -53,8 +53,14 @@ import { UpdateHost } from "../components/shell/UpdateHost";
 import { EmptyHomeHost } from "../home/EmptyHomeHost";
 import { SplashHost, type SplashHostProps } from "../visual/SplashHost";
 import { VisualEngineHost } from "../visual/VisualEngineHost";
-import { createShelfDetailContentLoader, handleShelfDetailRowAction, mapShelfDetailRowToTrack } from "../visual/shelf-detail-data";
-import type { PlaybackQuality, PlaylistSummary, ProviderId, ProviderLoginStatus, Track } from "@mineradio/shared";
+import {
+	createPodcastRadioDetailOpener,
+	createShelfDetailContentLoader,
+	handleShelfDetailRowAction,
+	mapShelfDetailRowToTrack,
+	type ShelfDetailContentListController,
+} from "../visual/shelf-detail-data";
+import type { PlaybackQuality, PlaylistSummary, PodcastCollection, ProviderId, ProviderLoginStatus, Track } from "@mineradio/shared";
 
 const SHOW_SPLASH = import.meta.env.VITE_SPLASH !== "0";
 const SIDECAR_STATUS_POLL_MS = 1500;
@@ -204,6 +210,7 @@ export function App({
 	const [neteaseStatus, setNeteaseStatus] = useState<ProviderLoginStatus | null>(null);
 	const [qqStatus, setQqStatus] = useState<ProviderLoginStatus | null>(null);
 	const [shelfPlaylists, setShelfPlaylists] = useState<PlaylistSummary[]>([]);
+	const [shelfPodcastCollections, setShelfPodcastCollections] = useState<PodcastCollection[]>([]);
 	const [homeForcedOpen, setHomeForcedOpen] = useState(false);
 	const [homeSuppressed, setHomeSuppressed] = useState(false);
 	const [sidecarRecoveryState, setSidecarRecoveryState] = useState<SidecarRecoveryNoticeState | null>(null);
@@ -277,6 +284,7 @@ export function App({
 	const neteaseCookieInputRef = useRef<HTMLTextAreaElement | null>(null);
 	const qqCookieInputRef = useRef<HTMLTextAreaElement | null>(null);
 	const customLyricInputRef = useRef<HTMLTextAreaElement | null>(null);
+	const shelfContentListRef = useRef<ShelfDetailContentListController | null>(null);
 
 	const positionRef = useRef(positionMs);
 	positionRef.current = positionMs;
@@ -505,13 +513,18 @@ export function App({
 	const refreshShelfPlaylists = useCallback(async (client: SidecarClient | null) => {
 		if (!client) {
 			setShelfPlaylists([]);
+			setShelfPodcastCollections([]);
 			return;
 		}
+		const podcastMy = (client as { podcastMy?: SidecarClient["podcastMy"] }).podcastMy;
 		const results = await Promise.allSettled([
 			client.playlistList("netease"),
 			client.playlistList("qq"),
+			typeof podcastMy === "function" ? podcastMy.call(client) : Promise.resolve(null),
 		]);
-		setShelfPlaylists(results.flatMap((result) => result.status === "fulfilled" ? result.value : []));
+		setShelfPlaylists(results.slice(0, 2).flatMap((result) => result.status === "fulfilled" ? result.value as PlaylistSummary[] : []));
+		const podcastResult = results[2];
+		setShelfPodcastCollections(podcastResult?.status === "fulfilled" && podcastResult.value?.loggedIn ? podcastResult.value.collections : []);
 	}, []);
 
 	const refreshProviderStatus = useCallback(async (provider: ProviderId) => {
@@ -1138,6 +1151,7 @@ export function App({
 				isPlaying={isPlaying}
 				queue={queue}
 				playlists={shelfPlaylists}
+				podcastCollections={shelfPodcastCollections}
 				currentTrack={currentTrack}
 				currentCoverUrl={currentTrack?.coverUrl}
 				sidecarBaseUrl={sidecarBaseUrl}
@@ -1163,9 +1177,20 @@ export function App({
 						client: sidecarClient,
 						isLiked: () => false,
 						onResult: (message) => showToast(message),
+						onOpenPodcastRadio: (radioId, title) => {
+							const loader = createShelfDetailContentLoader({
+								client: sidecarClient,
+								getContentList: () => shelfContentListRef.current,
+							});
+							createPodcastRadioDetailOpener({
+								getContentList: () => shelfContentListRef.current,
+								load: loader,
+							})(radioId, title);
+						},
 					});
 				}}
 				onShelfOpenDetailContent={(payload, contentList) => {
+					shelfContentListRef.current = contentList;
 					const loader = createShelfDetailContentLoader({
 						client: sidecarClient,
 						getContentList: () => contentList,

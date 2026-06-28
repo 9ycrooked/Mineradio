@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactElement, type RefObject } from "react";
-import type { LyricPayload, LyricLine as SharedLyricLine, PlaylistSummary, Track } from "@mineradio/shared";
+import type { LyricPayload, LyricLine as SharedLyricLine, PlaylistSummary, PodcastCollection, Track } from "@mineradio/shared";
 import {
 	type FxState,
 	type LyricLine as VisualLyricLine,
@@ -9,7 +9,7 @@ import {
 } from "@mineradio/visual-engine";
 import { useVisualEngine } from "./useVisualEngine";
 import type { ShelfDetailRowClickPayload } from "./shelf-pointer-interactions";
-import type { ShelfDetailContentListWriter } from "./shelf-detail-data";
+import type { ShelfDetailContentListController } from "./shelf-detail-data";
 import { PlayerController } from "../audio/player-controller";
 import { resolveShelfItems } from "./shelf-items";
 import { isWallpaperSafeShelfPreset } from "./shelf-focus-zone";
@@ -23,6 +23,7 @@ export interface VisualEngineHostProps {
 	isPlaying: boolean;
 	queue?: Track[];
 	playlists?: PlaylistSummary[];
+	podcastCollections?: PodcastCollection[];
 	currentTrack?: Track | null;
 	currentCoverUrl?: string | null;
 	sidecarBaseUrl?: string | null;
@@ -35,7 +36,7 @@ export interface VisualEngineHostProps {
 	onShelfModeChange?: (mode: ShelfMode) => void;
 	onShelfPlayQueueIndex?: (index: number) => void;
 	onShelfDetailRowClick?: (payload: ShelfDetailRowClickPayload) => void;
-	onShelfOpenDetailContent?: (payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListWriter) => void;
+	onShelfOpenDetailContent?: (payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListController) => void;
 }
 
 export function resolveVisualShelfSettings(
@@ -122,7 +123,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const wallpaperSafeRef = useRef<boolean>(isWallpaperSafeShelfPreset(props.fxDefaults?.preset));
 	const onShelfPlayQueueIndexRef = useRef<((index: number) => void) | undefined>(props.onShelfPlayQueueIndex);
 	const onShelfDetailRowClickRef = useRef<((payload: ShelfDetailRowClickPayload) => void) | undefined>(props.onShelfDetailRowClick);
-	const onShelfOpenDetailContentRef = useRef<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListWriter) => void) | undefined>(props.onShelfOpenDetailContent);
+	const onShelfOpenDetailContentRef = useRef<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListController) => void) | undefined>(props.onShelfOpenDetailContent);
 	const lifecycleRef = useRef<StageLyricsLifecycle | null>(null);
 
 	positionRef.current = props.positionMs;
@@ -161,10 +162,11 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const nextShelfItems = useMemo(
 		() => resolveShelfItems({
 			playlists: props.playlists ?? [],
+			podcastCollections: props.podcastCollections ?? [],
 			queue: props.queue ?? [],
 			currentTrack: props.currentTrack ?? null,
 		}),
-		[props.playlists, props.queue, props.currentTrack],
+		[props.playlists, props.podcastCollections, props.queue, props.currentTrack],
 	);
 
 	useEffect(() => {

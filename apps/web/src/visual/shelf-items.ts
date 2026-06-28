@@ -1,4 +1,4 @@
-import type { PlaylistSummary, Track } from "@mineradio/shared";
+import type { PlaylistSummary, PodcastCollection, Track } from "@mineradio/shared";
 import type { ShelfItem } from "@mineradio/visual-engine";
 
 function trackKey(track: Track | null): string {
@@ -44,11 +44,29 @@ export function mapPlaylistsToShelfItems(playlists: PlaylistSummary[]): ShelfIte
 		}));
 }
 
+export function mapPodcastCollectionsToShelfItems(collections: PodcastCollection[]): ShelfItem[] {
+	return collections
+		.filter((collection) => collection.key && collection.title)
+		.map((collection) => ({
+			type: "podcastCollection",
+			title: collection.title,
+			sub: `${collection.count || 0} items`,
+			cover: collection.coverUrl,
+			tag: "我的播客",
+			podcastKey: collection.key,
+			itemType: collection.itemType,
+		}));
+}
+
 export function resolveShelfItems(input: {
 	playlists: PlaylistSummary[];
+	podcastCollections?: PodcastCollection[];
 	queue: Track[];
 	currentTrack: Track | null;
 }): ShelfItem[] {
-	const playlistItems = mapPlaylistsToShelfItems(input.playlists);
-	return playlistItems.length > 0 ? playlistItems : mapQueueToShelfItems(input.queue, input.currentTrack);
+	const accountItems = [
+		...mapPlaylistsToShelfItems(input.playlists),
+		...mapPodcastCollectionsToShelfItems(input.podcastCollections ?? []),
+	];
+	return accountItems.length > 0 ? accountItems : mapQueueToShelfItems(input.queue, input.currentTrack);
 }

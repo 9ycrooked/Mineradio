@@ -37,7 +37,7 @@ import {
 } from "./free-camera-host";
 import { attachShelfPointerInteractionWiring } from "./shelf-pointer-interactions";
 import type { ShelfDetailRowClickPayload } from "./shelf-pointer-interactions";
-import type { ShelfDetailContentListWriter } from "./shelf-detail-data";
+import type { ShelfDetailContentListController } from "./shelf-detail-data";
 import {
 	attachShelfFocusZonePointerWiring,
 	createSecondaryPlaylistEdgeGuard,
@@ -65,7 +65,7 @@ export interface VisualEngineRefs {
 	coverUrlVersionRef?: RefObject<number>;
 	onShelfPlayQueueIndexRef?: RefObject<((index: number) => void) | undefined>;
 	onShelfDetailRowClickRef?: RefObject<((payload: ShelfDetailRowClickPayload) => void) | undefined>;
-	onShelfOpenDetailContentRef?: RefObject<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListWriter) => void) | undefined>;
+	onShelfOpenDetailContentRef?: RefObject<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListController) => void) | undefined>;
 	lifecycleRef: RefObject<StageLyricsLifecycle | null>;
 	coverResolution: number;
 	fxDefaults?: Partial<FxState>;

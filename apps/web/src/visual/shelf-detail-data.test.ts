@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
-import type { PlaylistDetail, ProviderId } from "@mineradio/shared";
+import type { PlaylistDetail, ProviderId, PodcastMyItemsResponse, PodcastProgramsResponse } from "@mineradio/shared";
 import { usePlaybackStore } from "../stores/playback-store";
 import {
+	createPodcastRadioDetailOpener,
 	createShelfDetailContentLoader,
 	handleShelfDetailRowAction,
 	mapPlaylistDetailToShelfRows,
+	mapPodcastItemsToShelfRows,
 	mapShelfDetailRowToTrack,
 	playShelfDetailRow,
 } from "./shelf-detail-data";
@@ -114,6 +116,90 @@ test("mapShelfDetailRowToTrack returns null for invalid provider, id, and title 
 	expect(mapShelfDetailRowToTrack({ id: "song-1", name: "", provider: "netease" })).toBeNull();
 });
 
+test("mapPodcastItemsToShelfRows maps voice programs to playable rows and radios to inert drill-down rows", () => {
+	const voiceItems: PodcastMyItemsResponse = {
+		loggedIn: true,
+		key: "liked",
+		title: "喜欢的声音",
+		sub: "",
+		itemType: "voice",
+		count: 1,
+		coverUrl: "",
+		items: [{
+			type: "podcast",
+			provider: "netease",
+			id: "song-1",
+			sourceId: "song-1",
+			title: "声音",
+			artists: ["主播"],
+			album: "播客",
+			coverUrl: "voice.jpg",
+			durationMs: 120000,
+			qualityHints: ["standard"],
+			playableState: "unknown",
+			programId: "program-1",
+			radioId: "radio-1",
+			radioName: "电台",
+			djName: "",
+			description: "",
+			createTime: 0,
+			serialNum: 0,
+		}],
+	};
+	const radioItems: PodcastMyItemsResponse = {
+		loggedIn: true,
+		key: "collect",
+		title: "收藏播客",
+		sub: "",
+		itemType: "radio",
+		count: 1,
+		coverUrl: "",
+		items: [{
+			id: "radio-1",
+			rid: "radio-1",
+			name: "电台",
+			coverUrl: "radio.jpg",
+			description: "",
+			djName: "主播",
+			category: "",
+			programCount: 12,
+			subCount: 0,
+		}],
+	};
+
+	expect(mapPodcastItemsToShelfRows(voiceItems)).toEqual([{
+		id: "song-1",
+		name: "声音",
+		artist: "主播",
+		cover: "voice.jpg",
+		provider: "netease",
+		type: "unknown",
+		sourceId: "song-1",
+		title: "声音",
+		artists: ["主播"],
+		album: "播客",
+		coverUrl: "voice.jpg",
+		durationMs: 120000,
+		playableState: "unknown",
+		qualityHints: ["standard"],
+	}]);
+	expect(mapPodcastItemsToShelfRows(radioItems)).toEqual([{
+		id: "radio-1",
+		name: "电台",
+		artist: "主播 · 12 集",
+		cover: "radio.jpg",
+		provider: "netease",
+		type: "podcast-radio",
+		sourceId: "radio-1",
+		title: "电台",
+		artists: ["主播"],
+		album: "Podcast",
+		coverUrl: "radio.jpg",
+		playableState: "unavailable",
+		qualityHints: [],
+	}]);
+});
+
 test("playShelfDetailRow enqueues and plays valid rows while ignoring hard non-playable rows", () => {
 	resetPlaybackStore();
 	const rows = mapPlaylistDetailToShelfRows(makeDetail(), "netease");
@@ -196,6 +282,42 @@ test("handleShelfDetailRowAction keeps collect routed but non-mutating until pla
 	expect(usePlaybackStore.getState().currentTrack).toBeNull();
 });
 
+test("handleShelfDetailRowAction opens podcast radio programs instead of playing radio placeholder rows", async () => {
+	resetPlaybackStore();
+	const row = mapPodcastItemsToShelfRows({
+		loggedIn: true,
+		key: "collect",
+		title: "收藏播客",
+		sub: "",
+		itemType: "radio",
+		count: 1,
+		coverUrl: "",
+		items: [{
+			id: "radio-1",
+			rid: "radio-1",
+			name: "电台",
+			coverUrl: "",
+			description: "",
+			djName: "主播",
+			category: "",
+			programCount: 12,
+			subCount: 0,
+		}],
+	})[0]!;
+	const opened: unknown[] = [];
+
+	expect(await handleShelfDetailRowAction({
+		row,
+		index: 0,
+		action: "play",
+		onOpenPodcastRadio: (radioId, title) => opened.push({ radioId, title }),
+	})).toBe(true);
+
+	expect(opened).toEqual([{ radioId: "radio-1", title: "电台" }]);
+	expect(usePlaybackStore.getState().queue).toEqual([]);
+	expect(usePlaybackStore.getState().currentTrack).toBeNull();
+});
+
 test("createShelfDetailContentLoader fetches playlist detail and writes rows through the request token", async () => {
 	const calls: Array<{ provider: ProviderId; id: string }> = [];
 	const writes: unknown[] = [];
@@ -230,6 +352,163 @@ test("createShelfDetailContentLoader fetches playlist detail and writes rows thr
 		token: 7,
 		kind: "playlist",
 		rows: mapPlaylistDetailToShelfRows(makeDetail(), "netease"),
+	}]);
+});
+
+test("createShelfDetailContentLoader fetches podcast collection detail through podcast API", async () => {
+	const calls: unknown[] = [];
+	const writes: unknown[] = [];
+	const result: PodcastMyItemsResponse = {
+		loggedIn: true,
+		key: "liked",
+		title: "喜欢的声音",
+		sub: "",
+		itemType: "voice",
+		count: 1,
+		coverUrl: "",
+		items: [{
+			type: "podcast",
+			provider: "netease",
+			id: "song-1",
+			sourceId: "song-1",
+			title: "声音",
+			artists: ["主播"],
+			album: "播客",
+			coverUrl: "",
+			qualityHints: [],
+			playableState: "unknown",
+			programId: "",
+			radioId: "",
+			radioName: "",
+			djName: "",
+			description: "",
+			createTime: 0,
+			serialNum: 0,
+		}],
+	};
+	const loader = createShelfDetailContentLoader({
+		client: {
+			async playlistDetail() {
+				throw new Error("playlistDetail should not be used for podcast collections");
+			},
+			async podcastMyItems(key, limit, offset) {
+				calls.push({ key, limit, offset });
+				return result;
+			},
+		},
+		getContentList: () => ({
+			setRowsForToken(token: number, rows: unknown[], kind?: string) {
+				writes.push({ token, rows, kind });
+			},
+			setErrorForToken() {
+				throw new Error("should not set error on success");
+			},
+		}),
+	});
+
+	await loader({
+		playlistId: "podcast:liked",
+		title: "喜欢的声音",
+		contentKind: "podcast",
+		requestToken: 8,
+		sourceCard: null,
+	});
+
+	expect(calls).toEqual([{ key: "liked", limit: 36, offset: 0 }]);
+	expect(writes).toEqual([{ token: 8, rows: mapPodcastItemsToShelfRows(result), kind: "podcast" }]);
+});
+
+test("createShelfDetailContentLoader fetches podcast radio programs through podcast API", async () => {
+	const calls: unknown[] = [];
+	const writes: unknown[] = [];
+	const result: PodcastProgramsResponse = {
+		radio: { id: "radio-1", rid: "radio-1", name: "电台" },
+		programs: [{
+			type: "podcast",
+			provider: "netease",
+			id: "song-1",
+			sourceId: "song-1",
+			title: "节目",
+			artists: ["主播"],
+			album: "电台",
+			coverUrl: "",
+			qualityHints: [],
+			playableState: "unknown",
+			programId: "",
+			radioId: "radio-1",
+			radioName: "电台",
+			djName: "",
+			description: "",
+			createTime: 0,
+			serialNum: 0,
+		}],
+		more: false,
+		total: 1,
+	};
+	const loader = createShelfDetailContentLoader({
+		client: {
+			async playlistDetail() {
+				throw new Error("playlistDetail should not be used for podcast radio");
+			},
+			async podcastPrograms(id, limit, offset) {
+				calls.push({ id, limit, offset });
+				return result;
+			},
+		},
+		getContentList: () => ({
+			setRowsForToken(token: number, rows: unknown[], kind?: string) {
+				writes.push({ token, rows, kind });
+			},
+			setErrorForToken() {
+				throw new Error("should not set error on success");
+			},
+		}),
+	});
+
+	await loader({
+		playlistId: "podcast-radio:radio-1",
+		title: "电台",
+		contentKind: "podcast",
+		requestToken: 10,
+		sourceCard: null,
+	});
+
+	expect(calls).toEqual([{ id: "radio-1", limit: 36, offset: 0 }]);
+	expect(writes).toEqual([{ token: 10, rows: mapPodcastItemsToShelfRows(result), kind: "podcast" }]);
+});
+
+test("createPodcastRadioDetailOpener reopens the active detail list and loads with the returned token", async () => {
+	const opens: unknown[] = [];
+	const loads: unknown[] = [];
+	const opener = createPodcastRadioDetailOpener({
+		getContentList: () => ({
+			open(opts: unknown) {
+				opens.push(opts);
+				return 23;
+			},
+			setRowsForToken() {},
+			setErrorForToken() {},
+		}),
+		load: async (payload) => {
+			loads.push(payload);
+		},
+	});
+
+	opener("radio-1", "电台");
+	await Promise.resolve();
+
+	expect(opens).toEqual([{
+		playlistId: "podcast-radio:radio-1",
+		title: "电台",
+		kind: "podcast",
+		sourceCard: null,
+	}]);
+	expect(loads).toEqual([{
+		playlistId: "podcast-radio:radio-1",
+		title: "电台",
+		contentKind: "podcast",
+		requestToken: 23,
+		sourceCard: null,
 	}]);
 });
 

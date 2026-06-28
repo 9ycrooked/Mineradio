@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { PlaylistSummary, Track } from "@mineradio/shared";
-import { mapQueueToShelfItems, resolveShelfItems } from "./shelf-items";
+import type { PlaylistSummary, PodcastCollection, Track } from "@mineradio/shared";
+import { mapPodcastCollectionsToShelfItems, mapQueueToShelfItems, resolveShelfItems } from "./shelf-items";
 
 function track(
 	id: string,
@@ -84,7 +84,7 @@ test("resolveShelfItems prefers provider playlists over queue fallback for the 3
 	];
 	const queue = [track("a", "Queued", ["Ada"], "Album", "cover-q")];
 
-	const items = resolveShelfItems({ playlists, queue, currentTrack: queue[0] });
+	const items = resolveShelfItems({ playlists, podcastCollections: [], queue, currentTrack: queue[0] });
 
 	expect(items).toEqual([
 		{
@@ -108,9 +108,93 @@ test("resolveShelfItems prefers provider playlists over queue fallback for the 3
 	]);
 });
 
+test("mapPodcastCollectionsToShelfItems mirrors baseline podcast collection cards", () => {
+	const collections: PodcastCollection[] = [
+		{
+			key: "collect",
+			title: "收藏播客",
+			sub: "你收藏的播客",
+			itemType: "radio",
+			count: 2,
+			coverUrl: "pod-cover",
+		},
+		{
+			key: "liked",
+			title: "喜欢的声音",
+			sub: "收藏或最近喜欢的声音",
+			itemType: "voice",
+			count: 5,
+			coverUrl: "",
+		},
+	];
+
+	expect(mapPodcastCollectionsToShelfItems(collections)).toEqual([
+		{
+			type: "podcastCollection",
+			title: "收藏播客",
+			sub: "2 items",
+			cover: "pod-cover",
+			tag: "我的播客",
+			podcastKey: "collect",
+			itemType: "radio",
+		},
+		{
+			type: "podcastCollection",
+			title: "喜欢的声音",
+			sub: "5 items",
+			cover: "",
+			tag: "我的播客",
+			podcastKey: "liked",
+			itemType: "voice",
+		},
+	]);
+});
+
+test("resolveShelfItems appends podcast collections after provider playlists before queue fallback", () => {
+	const playlists: PlaylistSummary[] = [{
+		provider: "netease",
+		id: "101",
+		name: "我喜欢的音乐",
+		coverUrl: "cover-like",
+		trackCount: 12,
+		trackIds: [],
+		subscribed: false,
+	}];
+	const podcastCollections: PodcastCollection[] = [{
+		key: "liked",
+		title: "喜欢的声音",
+		sub: "收藏或最近喜欢的声音",
+		itemType: "voice",
+		count: 5,
+		coverUrl: "voice-cover",
+	}];
+	const queue = [track("a", "Queued", ["Ada"], "Album", "cover-q")];
+
+	expect(resolveShelfItems({ playlists, podcastCollections, queue, currentTrack: queue[0] })).toEqual([
+		{
+			type: "playlist",
+			title: "我喜欢的音乐",
+			sub: "12 首",
+			cover: "cover-like",
+			tag: "网易云",
+			playlistId: "101",
+			provider: "netease",
+		},
+		{
+			type: "podcastCollection",
+			title: "喜欢的声音",
+			sub: "5 items",
+			cover: "voice-cover",
+			tag: "我的播客",
+			podcastKey: "liked",
+			itemType: "voice",
+		},
+	]);
+});
+
 test("resolveShelfItems falls back to queue when no provider playlist is available", () => {
 	const queue = [track("a", "Queued", ["Ada"], "Album", "cover-q")];
-	const items = resolveShelfItems({ playlists: [], queue, currentTrack: queue[0] });
+	const items = resolveShelfItems({ playlists: [], podcastCollections: [], queue, currentTrack: queue[0] });
 
 	expect(items[0]).toEqual({
 		type: "queue",
