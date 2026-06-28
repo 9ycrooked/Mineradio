@@ -172,6 +172,16 @@ export type {
 	HomeRipplesOptions,
 } from "./home-visual/ripples";
 export {
+	deriveLyricPaletteFromCover,
+	paintBackCoverColorsFromCover,
+	paintFloatColorsFromCover,
+	silverBlueLyricPalette,
+} from "./home-visual/cover-colors";
+export type {
+	CoverCanvasLike,
+	CoverLyricPalette,
+} from "./home-visual/cover-colors";
+export {
 	HOME_VISUAL_VERTEX_SHADER,
 	HOME_VISUAL_FRAGMENT_SHADER,
 	HOME_VISUAL_BLOOM_FRAGMENT_SHADER,

@@ -180,6 +180,49 @@ test("HomeVisual.setCoverUrl prepares cover canvas with the same baseline coverR
 	expect(image.height).toBe(384);
 });
 
+test("HomeVisual.setCoverUrl derives baseline lyric palette from the prepared cover canvas", async () => {
+	const scene = makeFakeScene();
+	const palettes: unknown[] = [];
+	const hv = await createHomeVisual({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		loadCoverImage: async (url) => ({ naturalWidth: 16, naturalHeight: 16, src: url }),
+		createCoverCanvas: (width, height) => {
+			const canvas = {
+				width,
+				height,
+				getContext: () => ({
+					drawImage() {},
+					getImageData() {
+						const data = new Uint8ClampedArray(canvas.width * canvas.height * 4);
+						for (let i = 0; i < data.length; i += 4) {
+							data[i] = 90;
+							data[i + 1] = 92;
+							data[i + 2] = 96;
+							data[i + 3] = 255;
+						}
+						const off = (8 * canvas.width + 8) * 4;
+						data[off] = 200;
+						data[off + 1] = 80;
+						data[off + 2] = 20;
+						return { data };
+					},
+				} as never),
+			};
+			return canvas as never;
+		},
+		onCoverLyricPalette: (palette) => palettes.push(palette),
+	});
+	hv.setCoverUrl("https://img.example/a.jpg");
+	await hv.getCoverController().whenIdle();
+	expect(palettes).toEqual([{
+		primary: "rgb(240,171,137)",
+		secondary: "rgb(224,199,92)",
+		highlight: "rgb(241,220,198)",
+		glowColor: "rgba(240,171,137,0.24)",
+	}]);
+});
+
 test("HomeVisual.update advances cover depth uniforms after edge texture generation", async () => {
 	const scene = makeFakeScene();
 	const edgeCanvas = { width: 256, height: 256, label: "edge" };

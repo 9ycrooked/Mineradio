@@ -44,18 +44,21 @@ test("setCoverUrl('') clears baseline cover-state uniforms without changing text
 test("setCoverUrl(url) loads the current cover image, marks texture dirty, and sets uHasCover", async () => {
 	const uniforms = makeUniforms();
 	const loaded: string[] = [];
+	const prepared: unknown[] = [];
 	const ctl = createHomeCoverTextureController({
 		uniforms: uniforms as never,
 		loadImage: async (url) => {
 			loaded.push(url);
 			return { width: 128, height: 96, src: url };
 		},
+		onCoverPrepared: (image) => prepared.push(image),
 	});
 	ctl.setCoverUrl("https://img.example/a.jpg");
 	expect(uniforms.uLoading.value).toBe(1);
 	await ctl.whenIdle();
 	expect(loaded).toEqual(["https://img.example/a.jpg"]);
 	expect(uniforms.uCoverTex.value.image).toEqual({ width: 128, height: 96, src: "https://img.example/a.jpg" });
+	expect(prepared).toEqual([{ width: 128, height: 96, src: "https://img.example/a.jpg" }]);
 	expect(uniforms.uCoverTex.value.needsUpdate).toBe(true);
 	expect(uniforms.uHasCover.value).toBe(1);
 	expect(uniforms.uColorMixT.value).toBe(0);

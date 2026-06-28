@@ -18,6 +18,8 @@ import {
 	type HomeCoverTextureController,
 } from "./cover-texture";
 import { createHomeRipples, type HomeRipples } from "./ripples";
+import { deriveLyricPaletteFromCover, type CoverCanvasLike } from "./cover-colors";
+import type { LyricPalette } from "../stage-lyrics/palette";
 
 export interface HomeVisualOptions {
 	scene: THREE.Scene;
@@ -27,6 +29,7 @@ export interface HomeVisualOptions {
 	loadCoverImage?: HomeCoverLoader;
 	createCoverCanvas?: HomeCoverCanvasFactory;
 	buildCoverEdgeDepth?: (image: HomeCoverImage) => HomeCoverImage | null;
+	onCoverLyricPalette?: (palette: LyricPalette) => void;
 }
 
 export interface HomeVisual {
@@ -54,6 +57,17 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		coverResolution: fieldOpts.coverResolution,
 		createCanvas: opts.createCoverCanvas,
 		buildEdgeDepth: opts.buildCoverEdgeDepth,
+		onCoverPrepared(image) {
+			if (!opts.onCoverLyricPalette) return;
+			const palette = deriveLyricPaletteFromCover(image as CoverCanvasLike);
+			if (!palette) return;
+			opts.onCoverLyricPalette({
+				primary: palette.primary,
+				secondary: palette.secondary,
+				highlight: palette.highlight,
+				glowColor: palette.glow,
+			});
+		},
 	});
 	const ripples = createHomeRipples(field.materialUniforms as never);
 	field.applyFxState(fx);

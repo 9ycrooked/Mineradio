@@ -31,6 +31,7 @@ export interface HomeCoverTextureControllerOptions {
 	uniforms: HomeCoverTextureUniforms;
 	loadImage?: HomeCoverLoader;
 	buildEdgeDepth?: (image: HomeCoverImage) => HomeCoverImage | null;
+	onCoverPrepared?: (image: HomeCoverImage) => void;
 	colorMixDurationMs?: number;
 	coverResolution?: number;
 	createCanvas?: HomeCoverCanvasFactory;
@@ -166,6 +167,7 @@ export function createHomeCoverTextureController(
 					markTextureImage(uniforms.uPrevCoverTex.value, uniforms.uCoverTex.value.image as HomeCoverImage);
 				}
 				markTextureImage(uniforms.uCoverTex.value, preparedImage);
+				opts.onCoverPrepared?.(preparedImage);
 				if (edgeImage && uniforms.uEdgeTex) {
 					markTextureImage(uniforms.uEdgeTex.value, edgeImage);
 					depthTween?.setTarget(1, 0.55, 180);
