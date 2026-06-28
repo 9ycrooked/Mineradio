@@ -248,7 +248,10 @@ export function attachShelfPointerInteractionWiring(
 		if (!opts.shelfManager.hasOpenContent()) return false;
 		if (isShelfInteractionUiTarget(event.target)) return false;
 		if (!isShelfInteractionBackgroundTarget(event.target)) return false;
-		return opts.isDetailWheelTarget?.(event) === true;
+		if (opts.isDetailWheelTarget) return opts.isDetailWheelTarget(event);
+		const contentList = opts.shelfManager.getContentList();
+		if (typeof contentList?.hasScreenTargetAt !== "function") return false;
+		return contentList.hasScreenTargetAt({ x: event.clientX, y: event.clientY }) === true;
 	};
 
 	const pointerInfoFromEvent = (event: PointerEvent | MouseEvent): ShelfPointerRaycastInfo => {

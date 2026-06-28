@@ -1458,6 +1458,105 @@ test("attachShelfPointerInteractionWiring ignores open detail wheel target miss 
 	expect(event.calls).toEqual([]);
 });
 
+test("attachShelfPointerInteractionWiring uses content-list screen targets for open detail wheel", () => {
+	const target = new FakePointerTarget();
+	const shelfScrolled: number[] = [];
+	const contentScrolled: number[] = [];
+	const queriedPointers: Array<{ x: number; y: number }> = [];
+	const cleanup = attachShelfPointerInteractionWiring({
+		target,
+		shelfManager: makeShelfManagerMock({
+			getMode: () => "stage",
+			getSnapshot: () => ({
+				...closedSnapshot(),
+				openCardIdx: 2,
+			}),
+			setSelectedIdx: () => {},
+			clearSelected: () => {},
+			getCenterIdx: () => 0,
+			scrollBy: (delta) => shelfScrolled.push(delta),
+			openDetail: () => {},
+			hasOpenContent: () => true,
+			getContentList: () => ({
+				scrollBy: (delta: number) => contentScrolled.push(delta),
+				hasScreenTargetAt: (pointer: { x: number; y: number }) => {
+					queriedPointers.push(pointer);
+					return pointer.x === 320 && pointer.y === 240;
+				},
+			}) as never,
+		}),
+		cinema: { setFocusZone: () => {} },
+		getHit: () => makeHit(2),
+		getSplashActive: () => false,
+		getPortrait: () => false,
+		getWallpaperSafe: () => false,
+		getViewportWidth: () => 1200,
+		getViewportHeight: () => 900,
+	});
+
+	const hit = makeWheelEvent({ deltaY: 120, clientX: 320, clientY: 240 });
+	const miss = makeWheelEvent({ deltaY: 120, clientX: 321, clientY: 240 });
+	target.emit("wheel", hit);
+	target.emit("wheel", miss);
+	cleanup();
+
+	expect(queriedPointers).toEqual([
+		{ x: 320, y: 240 },
+		{ x: 321, y: 240 },
+	]);
+	expect(contentScrolled).toEqual([1]);
+	expect(shelfScrolled).toEqual([]);
+	expect(hit.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
+	expect(miss.calls).toEqual([]);
+});
+
+test("attachShelfPointerInteractionWiring lets injected detail wheel predicate force a miss", () => {
+	const target = new FakePointerTarget();
+	const shelfScrolled: number[] = [];
+	const contentScrolled: number[] = [];
+	const queriedPointers: Array<{ x: number; y: number }> = [];
+	const cleanup = attachShelfPointerInteractionWiring({
+		target,
+		shelfManager: makeShelfManagerMock({
+			getMode: () => "stage",
+			getSnapshot: () => ({
+				...closedSnapshot(),
+				openCardIdx: 2,
+			}),
+			setSelectedIdx: () => {},
+			clearSelected: () => {},
+			getCenterIdx: () => 0,
+			scrollBy: (delta) => shelfScrolled.push(delta),
+			openDetail: () => {},
+			hasOpenContent: () => true,
+			getContentList: () => ({
+				scrollBy: (delta: number) => contentScrolled.push(delta),
+				hasScreenTargetAt: (pointer: { x: number; y: number }) => {
+					queriedPointers.push(pointer);
+					return true;
+				},
+			}) as never,
+		}),
+		cinema: { setFocusZone: () => {} },
+		getHit: () => makeHit(2),
+		getSplashActive: () => false,
+		getPortrait: () => false,
+		getWallpaperSafe: () => false,
+		getViewportWidth: () => 1200,
+		getViewportHeight: () => 900,
+		isDetailWheelTarget: () => false,
+	});
+
+	const event = makeWheelEvent({ deltaY: 120, clientX: 320, clientY: 240 });
+	target.emit("wheel", event);
+	cleanup();
+
+	expect(queriedPointers).toEqual([]);
+	expect(contentScrolled).toEqual([]);
+	expect(shelfScrolled).toEqual([]);
+	expect(event.calls).toEqual([]);
+});
+
 test("attachShelfPointerInteractionWiring ignores open detail wheel when no detail target predicate is provided", () => {
 	const target = new FakePointerTarget();
 	const shelfScrolled: number[] = [];

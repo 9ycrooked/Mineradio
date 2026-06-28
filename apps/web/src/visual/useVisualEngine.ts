@@ -480,6 +480,9 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 					const presence = refs.shelfPresenceRef?.current ?? refs.fxDefaults?.shelfPresence ?? "always";
 					return isRuntimeShelfPreviewActive(presence, shelfManager.getShelfVisibility());
 				},
+				isDetailWheelTarget: (event) => {
+					return shelfManager.getContentList()?.hasScreenTargetAt({ x: event.clientX, y: event.clientY }) === true;
+				},
 				setShelfMode: (mode) => setRuntimeShelfMode(refs.shelfModeRef, mode, refs.onShelfModeChange),
 				onShelfPlayQueueIndex: (index) => refs.onShelfPlayQueueIndexRef?.current?.(index),
 			});
