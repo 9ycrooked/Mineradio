@@ -17,7 +17,7 @@
 | Phase 2: Search, Queue, Playback, Lyrics, And Provider Runtime Parity | Completed | 2026-06-30 | Code-side/current execution complete; tests + docs | 现有实现与本轮回归测试覆盖 Step 1-7；`bun test packages/shared`、shared typecheck、`bun test sidecars/api`、sidecar typecheck、`bun test apps/web`、web build、`git diff --check` 通过；真实账号态、截图/录屏等外部 evidence 不作为当前阶段推进阻塞，仍由 release/parity gate 跟踪。 |
 | Phase 3: Visual Engine Full Parity | Completed | 2026-06-30 | Code-side/current execution complete; tests + docs | 现有实现与本轮 HomeVisual cover URL 修复覆盖 Step 1-8；`data:image/*` 与 `blob:` 封面不再被清空，`file://` 等不支持 scheme 仍拒绝并清空。`bun test packages/visual-engine`、visual-engine typecheck、`bun test apps/web`、web build、`git diff --check` 通过；WebView2/Electron 视觉录屏和截图仍作为最终 release/parity evidence 跟踪。 |
 | Phase 4: Tauri Runtime, Sidecar Lifecycle, Login, Desktop Lyrics, And Windows Parity | Completed | 2026-06-30 | Code-side/current execution complete; tests + docs | 现有实现与本轮 closeout 覆盖 Step 1-7：登录 popup provider 域过滤/外部打开/拒绝策略、diagnostics `logPointers.sidecarRuntimeLog` 与 token-like 脱敏、sidecar child lifecycle/restart/shutdown 测试均已补齐；`bun test sidecars/api`、`bun test apps/web`、`DYLD_LIBRARY_PATH=/tmp/mineradio-cargo-libs cargo test`、`git diff --check` 通过。Windows/WebView2 运行、真实登录/登出/session injection、桌面歌词和 sidecar runtime evidence 仍作为最终 release/parity evidence 跟踪。 |
-| Phase 5: Updater, Installer, License, Notices, And Release Identity | Next | 待执行 | Plan 11 Phase 5 | 继续执行 updater、installer、license、notices 和 release identity 收口；真实 release manifest/upload、install/uninstall、packaged notices evidence 仍作为最终 release/parity evidence 跟踪。 |
+| Phase 5: Updater, Installer, License, Notices, And Release Identity | Completed | 2026-06-30 | Code-side/current execution complete; tests + docs | 当前 signed Tauri updater 路径、installer/release identity policy、license/transitive audit、packaged notices 声明、release notes guard 和 updater manifest generator 均按代码侧收口；真实 release manifest/upload、`.sig`/asset 匹配、install/update/uninstall、packaged notices inspection evidence 仍作为最终 release/parity evidence 跟踪，未从 code-only evidence 勾选。 |
 
 Large screenshots/recordings must stay outside git. Commit only small documentation or metadata that records artifact paths and evidence status.
 
@@ -1630,7 +1630,7 @@ This module is visual-critical. Migration is not accepted unless visual parity w
 - 旧客户端更新通道与新 Tauri updater 混淆。
 - 未签名/manifest 不匹配导致更新失败或安全提示。
 #### Fallback
-- 公开发布前只允许 detection-only or manual Release download，不自动安装。
+- 当前 B2 signed updater 路径允许已签名 Tauri updater 安装；若未来 pubkey 为空，公开发布前只能使用 detection-only 或手动 Release 下载，不得自动安装。
 #### Depends On
 - Release decisions, updater key, build artifacts, license gate。
 #### Should Be Migrated Before

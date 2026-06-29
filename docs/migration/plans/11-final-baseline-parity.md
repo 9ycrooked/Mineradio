@@ -52,7 +52,7 @@ This plan supersedes using the old master implementation plan as a direct execut
 ### P1 Runtime And Release Gaps
 
 - Original gap: sidecar supervision/logging, login WebView cookie extraction/session injection, desktop lyrics runtime parity, updater/release/license packaging, and Windows installer evidence were incomplete when this plan was written.
-- 2026-06-29 code-side status: sidecar child retention/restart/logging/diagnostics, login WebView injection, desktop lyrics payload/fit/scroll/native middle-click poller, updater detection-only UI/policy, NSIS config, license audits, packaged-notices declarations, and Tauri build are implemented. Remaining closure requires B1 account validation, Windows/WebView2 runtime evidence, release manifest/upload/signature decision evidence, install/uninstall proof, and packaged notice inspection.
+- 2026-06-30 code-side status: sidecar child retention/restart/logging/diagnostics, login WebView injection, desktop lyrics payload/fit/scroll/native middle-click poller, signed Tauri updater UI/policy, NSIS config, license audits, packaged-notices declarations, updater manifest generation, and Tauri build are implemented. Remaining closure requires B1 account validation, Windows/WebView2 runtime evidence, real release manifest/upload/signature asset proof, install/update/uninstall proof, and packaged notice inspection.
 
 ## Execution Rules
 
@@ -449,7 +449,7 @@ This plan supersedes using the old master implementation plan as a direct execut
 
 **Goal:** Make the public release path complete without reusing old Electron updater/patch JSON or old app identity.
 
-> 2026-06-29 execution status: B2 currently means no signing key/public key, so the shipped updater path is detection-only with an explicit `signature-key-missing` gate. Policy guards, release identity, NSIS config, release CSP, packaged-notices declaration, license/transitive audits, release-notes wording guard, and a local Tauri NSIS build are code-side complete. Keep this phase open until a real release manifest/upload path, install/uninstall evidence, packaged notices inspection, and any future signed-updater decision are captured.
+> 2026-06-30 execution status: code-side Phase 5 is complete. B2 now means signed Tauri updater is enabled for code-side release work: `tauri.conf.json` carries the public key, `bundle.createUpdaterArtifacts=true`, Rust exposes `install_update` through `Update::download_and_install()`, Web exposes `installUpdate()`, and policy guards require signed-install when a pubkey is configured. Release identity, NSIS config, release CSP, packaged-notices declaration, license/transitive audits, release-notes wording guard, updater manifest generation, and a local Tauri NSIS build are code-side complete. Final release evidence remains open until real release manifest/upload assets, `.sig` matching, install/update/uninstall evidence, and packaged notices inspection are captured.
 
 **Files:**
 
@@ -470,27 +470,27 @@ This plan supersedes using the old master implementation plan as a direct execut
 - Electron release identity only as contrast: `package.json`, `RELEASE.md`, `CHANGELOG.md`, `docs/INSTALLER_STYLE.md`.
 - Tauri updater must use new repo/channel and must not migrate old patch JSON.
 
-- [ ] **Step 1: Resolve updater signature path**
+- [x] **Step 1: Resolve updater signature path**
 
-  Choose the final public-release updater behavior under the existing B2 decision. If Tauri updater download/install is used, configure pubkey/signature generation and signed release assets. If only detection is shipped, make install UI explicit and update `CAPABILITY_PARITY_CHECKLIST.md` with the approved release risk decision.
+  Choose the final public-release updater behavior under the existing B2 decision. Current B2 selects signed Tauri updater: configure pubkey/signature generation, signed release assets, and signed manifest generation. If a future build clears the pubkey, keep that path detection-only and update `CAPABILITY_PARITY_CHECKLIST.md` with the approved release risk decision.
 
-- [ ] **Step 2: Complete updater UI**
+- [x] **Step 2: Complete updater UI**
 
-  Under the current B2 no-signing decision, add only detection-safe user-facing states for checking, available, no update, error, and signature blocked; the UI must call Rust commands only and must not expose download/install/restart-required states unless a later signed-updater decision adds a public key and signed release assets.
+  Under the current B2 signed-updater decision, expose the signed “下载并安装” path only when a pubkey/signature path is configured. Unsigned fallback builds must remain detection-safe for checking, available, no update, error, and signature blocked states; the UI must call Rust commands only and must not expose download/install/restart-required states when the pubkey is empty.
 
-- [ ] **Step 3: Configure Windows installer behavior**
+- [x] **Step 3: Configure Windows installer behavior**
 
-  Set NSIS installer strategy, shortcuts, per-user behavior, app id, product name, icon, and install/uninstall evidence. Confirm the app data directory is new and does not read old Electron data by default.
+  Code-side installer policy/config is complete: NSIS strategy, shortcut identity, per-user behavior, app id, product name, icon, and new app data directory policy are locked by config and policy checks. Real install/uninstall, shortcut, app data, and packaged runtime evidence remains Step 7 / final release evidence and is not closed by this checked code-side step.
 
-- [ ] **Step 4: Complete license audit**
+- [x] **Step 4: Complete license audit**
 
   Remove every required `待审核` state from `LICENSE_GATE.md` by auditing Rust crates, npm packages, transitive dependencies, GSAP usage, Three.js usage, and packaged notice inclusion.
 
-- [ ] **Step 5: Complete notices and release notes**
+- [x] **Step 5: Complete notices and release notes**
 
-  Ensure packaged artifacts include GPL, original project notice, fork notice, `NOTICE.md`, and `THIRD_PARTY_NOTICES.md`. Release notes must state the project is a GPL-3.0 fork/rewrite and not an official Netease, QQ, or original Mineradio release.
+  Code-side notices/release-notes policy is complete: Tauri bundle resources declare GPL, original project notice, fork notice, `NOTICE.md`, and `THIRD_PARTY_NOTICES.md`; release-notes guard requires GPL-3.0 fork/rewrite and non-official Netease, QQ, and original Mineradio wording. Real packaged artifact inspection and published release-notes verification remain Step 7 / final release evidence and are not closed by this checked code-side step.
 
-- [ ] **Step 6: Verify automated phase**
+- [x] **Step 6: Verify automated phase**
 
   Run:
 

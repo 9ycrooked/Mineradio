@@ -5,6 +5,8 @@ const DEFAULT_REPO = "zzstar101/Mineradio";
 const DEFAULT_TARGETS = ["windows-x86_64-nsis", "windows-x86_64"];
 const DESKTOP_PACKAGE_PATH = "apps/desktop/package.json";
 const TAURI_CONFIG_PATH = "apps/desktop/src-tauri/tauri.conf.json";
+const SIGNED_DEFAULT_NOTES = "Mineradio Tauri Rewrite signed update manifest.";
+const DETECTION_ONLY_DEFAULT_NOTES = "Mineradio Tauri Rewrite detection-only update manifest.";
 
 export function updaterArtifactUrl({ repo = DEFAULT_REPO, artifactName }) {
   const cleanRepo = String(repo ?? "").trim();
@@ -107,12 +109,13 @@ export function generateUpdaterManifestFromWorkspace(rootDir = process.cwd(), ov
   const version = overrides.version ?? desktopPackage.version;
   const artifactName = overrides.artifactName
     ?? `${tauriConfig.productName}_${version}_x64-setup.exe`;
+  const signature = overrides.signature ?? readSignatureFile(overrides.signatureFile) ?? "";
   return buildTauriUpdaterManifest({
     version,
-    notes: overrides.notes ?? "Mineradio Tauri Rewrite detection-only update manifest.",
+    notes: overrides.notes ?? (String(signature).trim() ? SIGNED_DEFAULT_NOTES : DETECTION_ONLY_DEFAULT_NOTES),
     pubDate: overrides.pubDate,
     artifactName,
-    signature: overrides.signature ?? readSignatureFile(overrides.signatureFile) ?? "",
+    signature,
     repo: overrides.repo ?? DEFAULT_REPO
   });
 }

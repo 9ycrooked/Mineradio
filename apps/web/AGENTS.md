@@ -13,7 +13,7 @@ src/
 ├── app/App.tsx             # App shell：phase machine + sidecar boot + audio+lyric lifecycle + splash + VisualEngineHost
 ├── tauri/
 │   ├── runtime.ts          # isTauriRuntime() + runtime/window/import/export/login bridge
-│   └── updater.ts          # Tauri updater detection-only bridge（B2 未签名时不下载/安装）
+│   └── updater.ts          # Tauri updater signed-install bridge；pubkey-empty builds fall back to detection-only
 ├── audio/
 │   └── player-controller.ts # HTMLAudioElement event relay：play/pause/timeupdate/durationchange/ended/error
 ├── api/
@@ -78,7 +78,7 @@ src/
 - **17 try/catch disposeHandles**: visual-engine 各模块 dispose 不稳定（部分 throw on double-dispose）；逐个 try/catch 容错；新接的模块同样处理。
 - **AudioContext lifecycle**: `useVisualEngine` owns the visual WebAudio/Three handles; add new handles to the existing dispose path and keep refs nulled after cleanup.
 - **`shelf-store` 已接产品主流程**：App.tsx 从 store 读取 mode/camera/presence/showPodcasts/mergeCollections，VisualEngineHost 通过 refs 与 runtime right-click promotion 同步。
-- **`update-store` 已接 Tauri updater 检测路径**：App.tsx 调 `getUpdaterStatus()` / `checkForUpdate()`，`components/shell/UpdateHost.tsx` 渲染 baseline-style 入口；B2 未签名时保持 detection-only。
+- **`update-store` 已接 Tauri updater 检测/安装路径**：App.tsx 调 `getUpdaterStatus()` / `checkForUpdate()`，`components/shell/UpdateHost.tsx` 渲染 baseline-style 入口；当前 B2 为 signed updater，pubkey-empty builds 必须保持 `signature-key-missing` detection-only fallback。
 - **`SearchPanel` 中文 play state labels**：未知 / 可播放 / 需登录 / VIP / 付费 / 无音源 / 试听；QQ search gate 已移除，但仍必须保留不可播放状态防误点，尤其是 `login_required`。
 
 ## COMMANDS

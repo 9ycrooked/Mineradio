@@ -18,10 +18,10 @@ This plan is now a subsystem reference, not the current implementation entry poi
 
 Current review findings that must not be treated as complete:
 
-- Updater is detection-only: code-side detection/status plumbing exists, but download/install/restart is still blocked until the updater signature/public-key path is resolved.
-- Pubkey/signature gate remains open: `pubkey` is not a completed release signing policy, and signed release assets or an approved manual-update decision are still required.
+- Updater is signed-install code-side: B2 now selects signed Tauri updater, `tauri.conf.json` contains a pubkey, and Rust/Web expose the signed install path. This still does not close real release manifest/upload, `.sig` matching, low-version update install, or Windows uninstall evidence.
+- Pubkey/signature release evidence remains open: the public key is configured, but signed release assets, generated `.sig` files, `latest.json`, uploaded assets, and low-version install/update proof are still required.
 - NSIS installer policy and manual evidence remain open: install, launch, update path, uninstall, shortcuts, per-user behavior, app id/product name/icon, packaged notices, and new app-data directory behavior need Windows proof.
-- License audit is unresolved: required dependency/license rows, QQ reference decisions, GSAP plugin status, transitive notices, and packaged notice inclusion must be closed before public release.
+- License audit is code-side complete for Rust crates, npm dependencies, QQ provider decision, GSAP standard-only usage, Three.js, and transitive dependency closure. Remaining release blockers are packaged notices inclusion evidence, real GitHub Release notes verification, install/update/uninstall proof, and release asset/signature proof.
 
 Do not check any capability, release, or license gate from this plan alone. Updater/release/license closure belongs to `11-final-baseline-parity.md` Phase 5 and final sign-off belongs to Phase 6.
 
@@ -62,13 +62,13 @@ Do not check any capability, release, or license gate from this plan alone. Upda
 
 ## Task 1: Tauri Updater
 
-P10.a code-side status: updater detection wiring is complete, but install/download is still blocked by the signature/public-key gate. No Windows install/update/uninstall gate is closed.
+P10.a code-side status: updater detection wiring and signed install wiring are complete under current B2. No real release upload, Windows install/update/uninstall, or packaged artifact gate is closed.
 
-Current status remains detection-only. Do not present the updater as release-complete until either signed Tauri updater download/install is proven or an approved manual-update release decision is recorded in Phase 5 of `11-final-baseline-parity.md`.
+Current code-side status is signed-install. Do not present the updater as release-complete until signed Tauri updater download/install is proven with real release assets, or an approved manual-update release decision is recorded in Phase 5 of `11-final-baseline-parity.md`.
 
-2026-06-29 updater policy guard code-side status: `npm run updater-policy:check` now locks the B2 unsigned updater path to detection-only. While `plugins.updater.pubkey` is empty, Rust commands and web updater helpers must not expose download/install/restart behavior, and the React update modal must keep the `signature-key-missing` non-installable copy. This guard does not close the real updater manifest/download/install gate.
+2026-06-30 updater policy guard code-side status: `npm run updater-policy:check` now locks the current B2 signed path to `signed-install` when `plugins.updater.pubkey` is configured, requiring updater artifacts, Rust `install_update`, Rust `download_and_install`, Web `installUpdate`, and signed “下载并安装” UI copy. If a future build clears the pubkey, the same guard forces the unsigned path back to detection-only with `signature-key-missing` non-installable copy. This guard does not close the real updater manifest/download/install gate.
 
-2026-06-29 updater manifest generator code-side status: `npm run release-manifest:generate` now emits a Tauri 2 static `latest.json` draft for the locked `zzstar101/Mineradio` channel, including both `windows-x86_64-nsis` and `windows-x86_64` target entries so the updater can resolve the NSIS bundle target and its fallback. Under B2 unsigned builds, generated manifests keep platform signatures empty and carry `x-mineradio-policy.updater=detection-only`; this is suitable for release-channel detection tests only and does not authorize download/install.
+2026-06-30 updater manifest generator code-side status: `npm run release-manifest:generate` now emits a Tauri 2 static `latest.json` draft for the locked `zzstar101/Mineradio` channel, including both `windows-x86_64-nsis` and `windows-x86_64` target entries so the updater can resolve the NSIS bundle target and its fallback. Signed manifests require non-empty platform signatures and default to signed update notes; unsigned fallback manifests keep platform signatures empty and carry `x-mineradio-policy.updater=detection-only`, suitable for release-channel detection tests only.
 
 2026-06-29 release CSP code-side status: `apps/desktop/src-tauri/tauri.conf.json` now uses a release `csp` that permits only self plus `http://127.0.0.1:*` sidecar proxy for network/media/image loading, with `data:`/`blob:` retained only where the migrated visual/image paths require them. `devCsp` separately allows the Vite dev server/HMR path. `npm run release-csp:check` prevents returning release `csp` to `null`, unsafe sources, wildcard sources, or direct external origins. Windows/WebView2 runtime verification remains pending.
 
@@ -82,7 +82,7 @@ Use static JSON first for local testing unless a dynamic server is already avail
 
 Configure Tauri updater endpoint, public key/signing as required by selected updater mode.
 
-Code-side endpoint is configured in `apps/desktop/src-tauri/tauri.conf.json` as `https://github.com/zzstar101/Mineradio/releases/latest/download/latest.json`; `pubkey` remains empty, so signed download/install is not complete.
+Code-side endpoint is configured in `apps/desktop/src-tauri/tauri.conf.json` as `https://github.com/zzstar101/Mineradio/releases/latest/download/latest.json`; `pubkey` is configured and `bundle.createUpdaterArtifacts=true`, so code-side signed install wiring is complete. Real `.sig`/asset/upload/update-install evidence remains pending.
 
 - [ ] **Step 3: React update UI**
 
@@ -94,7 +94,7 @@ React shows:
 - error.
 - restart required.
 
-P10.a only added typed updater helpers and a Zustand status reducer. The full user-facing update UI and download/install/restart flow remain pending.
+Current React UI includes typed updater helpers, Zustand status/install state, and signed “下载并安装” copy when the pubkey/signature path is configured. Restart-after-install and real update-install evidence remain pending until a signed release asset is exercised.
 
 - [ ] **Step 4: Verify local update**
 

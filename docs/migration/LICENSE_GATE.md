@@ -60,7 +60,7 @@
 - [x] GSAP 使用范围已确认不含会员/闭源插件。 — 2026-06-29 code-side scan 仅发现 `gsap` 与标准包 `gsap/CustomEase` lazy import；未发现 Club/member/private plugin import，`license-transitive:check` 对 `gsap` 使用显式 standard-package allowlist。
 - [x] QQ provider 参考项目 license 审核完成。  — DECISIONS.md A6 已锁 `jsososo/QQMusicApi` / npm `qq-music-api` 为 GPL-3.0 可接入；`sansenjian/qq-music-api` 因 README 非商业附加条款与 GPL-3.0 冲突不接入。
 - [ ] 打包产物包含必要 license/notice 文件。  — 2026-06-29 packaged notices code-side policy complete：`tauri.conf.json` 已通过 `bundle.resources` 声明打包 `LICENSE`、`NOTICE.md`、`THIRD_PARTY_NOTICES.md`、`PRIVACY.md`、`SECURITY.md`，并新增 `npm run packaged-notices:check` 防回退；仍需 Windows 安装包/安装后目录产物验证后再勾选。
-- [ ] Release notes 不暗示本项目是网易云、QQ 音乐或原 Mineradio 官方版本。 — 2026-06-29 release notes policy code-side guard complete：新增 `docs/migration/release-notes-template.md` 和 `npm run release-notes-policy:check`，静态要求发布说明声明 `Mineradio Tauri Rewrite`、GPL-3.0 二开/fork/rewrite、`zzstar101/Mineradio` 发布通道、非网易云音乐/QQ 音乐/原 Mineradio 官方版本、旧 Electron patch JSON updater 不迁移，以及 B2 未签名时 detection-only 不下载/安装更新。真实 GitHub Release notes 尚未发布/核验，所以不勾选。
+- [ ] Release notes 不暗示本项目是网易云、QQ 音乐或原 Mineradio 官方版本。 — 2026-06-29 release notes policy code-side guard complete：新增 `docs/migration/release-notes-template.md` 和 `npm run release-notes-policy:check`，静态要求发布说明声明 `Mineradio Tauri Rewrite`、GPL-3.0 二开/fork/rewrite、`zzstar101/Mineradio` 发布通道、非网易云音乐/QQ 音乐/原 Mineradio 官方版本、旧 Electron patch JSON updater 不迁移，并明确当前 signed updater install 已启用；若未来 pubkey 为空，unsigned fallback 必须明确 detection-only 且不下载/安装更新。真实 GitHub Release notes 尚未发布/核验，所以不勾选。
 
 ## 发布前未解决项
 
