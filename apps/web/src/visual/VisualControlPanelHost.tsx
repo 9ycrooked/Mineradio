@@ -7,7 +7,7 @@ const PRESETS = [
   { id: 2, name: "轨道", desc: "Orbit lines" },
   { id: 3, name: "虚空", desc: "Void field" },
   { id: 4, name: "黑胶", desc: "Vinyl pulse" },
-  { id: 5, name: "星河", desc: "Wallpaper preview" },
+  { id: 5, name: "星河", desc: "静默流光" },
   { id: 6, name: "安魂", desc: "骷髅 · YUI7W" },
 ] as const;
 
@@ -273,14 +273,6 @@ const OVERLAY_TOGGLES: ToggleDef[] = [
     key: "desktopLyricsHighlight",
     id: "t-desktopLyricsHighlight",
     label: "桌面歌词高亮跟随",
-  },
-  {
-    key: "wallpaperMode",
-    id: "t-wallpaperMode",
-    label: "壁纸模式",
-    disabled: true,
-    badge: "开发中",
-    title: "开发中，暂不可用",
   },
 ];
 
@@ -631,7 +623,7 @@ export function VisualControlPanelHost(
           </div>
           <div className="fx-fold-body">
             <div className="fx-toggle-grid">{OVERLAY_TOGGLES.map(toggle)}</div>
-            <div className="fx-section-label">桌面 / 壁纸</div>
+            <div className="fx-section-label">桌面歌词</div>
             {DESKTOP_SLIDERS.map(slider)}
             <div className="fx-section-label">桌面帧数</div>
             <Segment
@@ -648,31 +640,14 @@ export function VisualControlPanelHost(
               ]}
               onNumberSettingChange={props.onNumberSettingChange}
             />
-            <div className="fx-slider dev-locked">
-              <label htmlFor="fx-wallpaperopacity">壁纸透明度</label>
-              <input
-                id="fx-wallpaperopacity"
-                type="range"
-                min="0.35"
-                max="1"
-                step="0.01"
-                value={numberValue(props, "wallpaperOpacity")}
-                disabled
-                readOnly
-              />
-              <output>
-                {formatOutput(numberValue(props, "wallpaperOpacity"), 0.01)}
-              </output>
-              <span aria-hidden="true" />
-            </div>
           </div>
         </div>
 
         <div className="fx-fold open" id="fx-stage-fold">
           <div className="fx-fold-head">
             <span className="fx-fold-title">
-              <strong>3D / 手势</strong>
-              <small>歌单架 / 摄像头交互</small>
+              <strong>3D 歌单架</strong>
+              <small>模式 / 内容</small>
             </span>
             <span className="arrow">▶</span>
           </div>
@@ -717,12 +692,6 @@ export function VisualControlPanelHost(
             <div className="fx-section-label">歌单架内容</div>
             <div className="fx-toggle-grid">
               {SHELF_CONTENT_TOGGLES.map(toggle)}
-            </div>
-            <div className="fx-section-label">摄像头交互</div>
-            <div className="fx-seg" id="cam-seg">
-              <button type="button" data-cam="off" className="active">
-                关闭
-              </button>
             </div>
           </div>
         </div>

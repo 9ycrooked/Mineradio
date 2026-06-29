@@ -38,8 +38,11 @@ test("VisualControlPanelHost renders baseline DIY control sections", () => {
   expect(html).toContain('id="fx-overlay-fold"');
   expect(html).not.toContain('id="t-float"');
   expect(html).toContain('id="t-desktopLyrics"');
-  expect(html).toContain('id="t-wallpaperMode"');
-  expect(html).toContain("开发中");
+  expect(html).not.toContain('id="t-wallpaperMode"');
+  expect(html).not.toContain("壁纸模式");
+  expect(html).not.toContain("壁纸透明度");
+  expect(html).not.toContain("Wallpaper preview");
+  expect(html).not.toContain("开发中");
   expect(html).toContain('id="fx-desktoplyricssize"');
   expect(html).toContain('id="fx-desktoplyricsopacity"');
   expect(html).toContain('id="fx-desktoplyricsy"');
@@ -50,6 +53,8 @@ test("VisualControlPanelHost renders baseline DIY control sections", () => {
   expect(html).toContain('id="t-shelfMergeCollections"');
   expect(html).not.toContain('data-cam="gesture"');
   expect(html).not.toContain("手势触碰");
+  expect(html).not.toContain("手势");
+  expect(html).not.toContain("摄像头交互");
   expect(html).toContain('id="fx-advanced"');
   expect(html).toContain('id="performance-background-seg"');
   expect(html).toContain('id="performance-quality-seg"');
@@ -102,7 +107,6 @@ test("VisualControlPanelHost opens the panel and emits baseline preset/setting c
     container.querySelector('[data-font="stone-song"]') as HTMLButtonElement
   ).click();
   (container.querySelector("#t-cinema") as HTMLButtonElement).click();
-  (container.querySelector("#t-wallpaperMode") as HTMLButtonElement).click();
   (
     container.querySelector("#t-shelfShowPodcasts") as HTMLButtonElement
   ).click();
