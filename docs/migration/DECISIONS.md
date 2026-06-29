@@ -16,7 +16,7 @@
 | A6 | QQ provider license | 接入 `jsososo/QQMusicApi`（GPL-3.0，npm 包 `qq-music-api`）；`sansenjian/qq-music-api` 不接入（MIT 文件 + README 「不可商业用途」附加条款与 GPL-3.0 「no further restrictions」冲突，组合作品无法在 GPL-3.0 下分发） | jsososo 与本项目同 GPL-3.0，无歧义；sansenjian 有合规风险 |
 | A7 | 延期能力发布前处置 | Wallpaper 深联动 / 实验壁纸模式 / 手势识别 hand-canvas = `hidden`（发布前隐藏入口）；旧 Electron patch JSON 系统 / 旧用户数据自动迁移 = `removed-by-decision` | 见 `docs/migration/DEFERRED_CAPABILITIES.md` |
 | A8 | 真 Netease provider 集成方式 | 主用 `hana-music-api`（MIT，Bun-native，ESM-first，依赖 hono/music-metadata/qrcode）；回退：`NeteaseCloudMusicApi`（ISC，已在根 `package.json` ^4.32.0）。若手动 WebView2 验证发现 search/songUrl/lyric 行为与 baseline 不一致，切回 NeteaseCloudMusicApi | 用户「换另一个集成方式」+ hana-music-api Bun-native 契合 sidecar 栈；hana 极新（2 stars/v1.1.1）有 parity 风险，回退路径保留 |
-| A9 | AI depth 远程模型来源 | 为对齐 Electron baseline，允许 WebView2 release CSP 精确放行 `https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2` 固定版本路径、`Xenova/depth-anything-small-hf` 的 HuggingFace repo/cache 路径，以及当前 ONNX artifact 重定向到的 `https://us.aws.cdn.hf.co/xet-bridge-us/65b10f1dc9a5a7680fa72994/` 前缀；不加泛 `https:`、整站 CDN 或整站 HuggingFace origin | 用户明确要求“接 jsDelivr/远程模型”；该路径只用于 baseline AI 立体增强，不作为通用外部脚本许可 |
+| A9 | AI depth 远程模型来源 | 为对齐 Electron baseline，允许 WebView2 release/dev CSP 精确放行 `https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2` 固定版本路径、`Xenova/depth-anything-small-hf` 的 HuggingFace repo/cache 路径，以及当前 ONNX artifact 重定向到的 `https://us.aws.cdn.hf.co/xet-bridge-us/65b10f1dc9a5a7680fa72994/` 前缀；dev 侧仅额外保留 Vite/HMR 本地源；不加泛 `https:`、整站 CDN 或整站 HuggingFace origin | 用户明确要求“接 jsDelivr/远程模型”；该路径只用于 baseline AI 立体增强，不作为通用外部脚本许可 |
 
 ## B 类决策（私密/外部资源，发布前收口）
 
