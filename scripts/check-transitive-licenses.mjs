@@ -96,17 +96,28 @@ export function evaluateLicenseEntries(entries) {
     if (STANDARD_NO_CHARGE_ALLOWLIST.has(entry.name) && /standard no-charge/i.test(license)) {
       continue;
     }
-    const tokens = normalizeLicenseExpression(license);
-    if (tokens.length === 0) {
+    if (normalizeLicenseExpression(license).length === 0) {
       errors.push(`${entry.ecosystem} ${entry.name}@${entry.version} has unparsable license: ${license}`);
       continue;
     }
-    const disallowed = tokens.filter((token) => !GPL_COMPATIBLE_LICENSES.has(token));
-    if (disallowed.length > 0) {
+    if (!isLicenseExpressionAllowlisted(license)) {
       errors.push(`${entry.ecosystem} ${entry.name}@${entry.version} uses non-allowlisted license: ${license}`);
     }
   }
   return { ok: errors.length === 0, errors };
+}
+
+function isLicenseExpressionAllowlisted(license) {
+  const text = String(license).trim();
+  const orParts = text.split(/\s+OR\s+/i);
+  if (orParts.length > 1) {
+    return orParts.some((part) => licenseTokensAllowlisted(normalizeLicenseExpression(part)));
+  }
+  return licenseTokensAllowlisted(normalizeLicenseExpression(text));
+}
+
+function licenseTokensAllowlisted(tokens) {
+  return tokens.length > 0 && tokens.every((token) => GPL_COMPATIBLE_LICENSES.has(token));
 }
 
 export function parseCargoMetadataPackages(metadata) {

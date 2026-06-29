@@ -6,6 +6,7 @@ declare module "bun:test" {
     toBeInstanceOf(expected: unknown): MatcherResult;
     toThrow(expected?: unknown): MatcherResult;
     toContain(expected: unknown): MatcherResult;
+    toMatchObject(expected: unknown): MatcherResult;
     toBeLessThanOrEqual(expected: number): MatcherResult;
     toBeGreaterThan(expected: number): MatcherResult;
     toBeDefined(): MatcherResult;

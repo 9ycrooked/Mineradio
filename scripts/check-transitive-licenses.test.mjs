@@ -31,6 +31,14 @@ describe("transitive license check", () => {
     expect(result.errors.some((error) => error.includes("gsap"))).toBe(false);
   });
 
+  test("allows GPL-compatible choices in OR license expressions", () => {
+    const result = evaluateLicenseEntries([
+      { ecosystem: "npm", name: "node-forge", version: "1.4.0", license: "(BSD-3-Clause OR GPL-2.0)" }
+    ]);
+
+    expect(result).toEqual({ ok: true, errors: [] });
+  });
+
   test("parses cargo metadata package licenses", () => {
     const entries = parseCargoMetadataPackages({
       packages: [
