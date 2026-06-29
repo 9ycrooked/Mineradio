@@ -149,6 +149,8 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 	const data: ShelfItem[] = [];
 	const renderedCards = new Map<number, ShelfCardSprite>();
 	let renderedWindowSig = "";
+	let renderedWindowAsync = false;
+	let asyncBuildJob: { start: number; end: number; next: number; sig: string } | null = null;
 	let breathPulseLast = 0;
 	let lastFrameNow = 0;
 	let lastUpdateDtSeconds = 1 / 60;
@@ -169,12 +171,14 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 		getState() {
 			return state;
 		},
-		setData(items) {
+		setData(items, setDataOpts) {
 			data.length = 0;
 			for (const it of items) data.push(it);
 			state.lastSig = `${items.length}::${state.shelfPane}`;
 			clampStateToDataLength(items.length);
 			renderedWindowSig = "";
+			renderedWindowAsync = !!setDataOpts?.asyncBuild;
+			asyncBuildJob = null;
 		},
 		getData() {
 			return data;
@@ -219,6 +223,7 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			if (group) {
 				group.visible = shouldShowShelfGroup();
 			}
+			applyGroupPose(ctx);
 			rebuildRenderedWindowIfNeeded();
 			applyRenderedCardLayout(ctx);
 			syncDetailContentMeshes(ctx);
@@ -522,38 +527,34 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 		if (!group || !three || !doc || data.length === 0) {
 			disposeRenderedCards();
 			renderedWindowSig = "";
+			asyncBuildJob = null;
 			return;
 		}
 		if (state.mode === "off" && state.shelfVisibility <= 0) {
 			disposeRenderedCards();
 			renderedWindowSig = "";
+			asyncBuildJob = null;
 			return;
 		}
 		const window = computeRenderWindow();
 		const sig = `${window.start}:${window.end}:${data.length}:${state.shelfPane}`;
-		if (sig === renderedWindowSig) return;
-		disposeRenderedCards();
-		for (let index = window.start; index <= window.end; index++) {
-			const item = data[index];
-			if (!item) continue;
-			const card = createShelfCardMesh({
-				item,
-				index,
-				three,
-				createCanvas: () => doc.createElement("canvas"),
-				drawState: {
-					index,
-					centered: index === Math.round(state.centerSmooth),
-					selected: index === state.selectedIdx,
-					beatProgress: 0,
-					dimmed: state.openCardIdx >= 0 && state.openCardIdx !== index,
-				},
-			});
-			card.mesh.renderOrder = 50 + index;
-			group.add(card.mesh);
-			renderedCards.set(index, card);
+		if (sig !== renderedWindowSig) {
+			disposeRenderedCards();
+			renderedWindowSig = sig;
+			if (renderedWindowAsync) {
+				asyncBuildJob = { start: window.start, end: window.end, next: window.start, sig };
+				buildAsyncCards(3);
+				return;
+			}
+			asyncBuildJob = null;
+			for (let index = window.start; index <= window.end; index++) {
+				buildRenderedCard(index);
+			}
+			return;
 		}
-		renderedWindowSig = sig;
+		if (asyncBuildJob?.sig === sig) {
+			buildAsyncCards(3);
+		}
 	}
 
 	function applyRenderedCardLayout(ctx: FrameContext): void {
@@ -561,6 +562,8 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 		const profile = getDefaultShelfLayoutProfile();
 		const center = state.centerSmooth;
 		const mode = state.mode === "stage" ? "stage" : "side";
+		const detailOpen = state.openCardIdx >= 0;
+		const passiveAlways = state.mode === "side" && state.presence === "always" && !state.pinnedOpen && !detailOpen;
 		for (const [index, card] of renderedCards) {
 			const absD = Math.abs(index - center);
 			const breathPulse = computeBreathPulse(
@@ -589,11 +592,13 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 				pulse: ctx.uniforms.uBeat.value,
 				breathPulse,
 				lift: index === state.selectedIdx ? 1 : 0,
-				detailOpen: state.openCardIdx >= 0,
+				detailOpen,
+				passiveAlways,
+				pointerParallax: ctx.pointerParallax,
 			});
 			card.mesh.visible = absD <= SHELF_VISIBLE_RADIUS + 0.55;
 			card.mesh.position.set(layout.x, layout.y, layout.z);
-			card.mesh.rotation.set(0, layout.rotationY, 0);
+			card.mesh.rotation.set(layout.rotationX, layout.rotationY, 0);
 			card.mesh.scale.setScalar(layout.scale);
 			card.mesh.renderOrder = layout.renderOrder;
 			card.material.opacity = layout.opacity * 0.96 * state.shelfVisibility;
@@ -601,6 +606,66 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			color?.setScalar?.(state.openCardIdx >= 0 && state.openCardIdx !== index ? 0.72 : 1);
 			updateCardSpriteIfNeeded(card, index, ctx);
 		}
+	}
+
+	function buildAsyncCards(maxPerFrame: number): void {
+		if (!asyncBuildJob || !group || !three || !doc) return;
+		let built = 0;
+		while (asyncBuildJob.next <= asyncBuildJob.end && built < maxPerFrame) {
+			buildRenderedCard(asyncBuildJob.next);
+			asyncBuildJob.next += 1;
+			built += 1;
+		}
+		if (asyncBuildJob.next > asyncBuildJob.end) {
+			asyncBuildJob = null;
+		}
+	}
+
+	function buildRenderedCard(index: number): void {
+		if (!group || !three || !doc || renderedCards.has(index)) return;
+		const item = data[index];
+		if (!item) return;
+		const card = createShelfCardMesh({
+			item,
+			index,
+			three,
+			createCanvas: () => doc.createElement("canvas"),
+			drawState: {
+				index,
+				centered: index === Math.round(state.centerSmooth),
+				selected: index === state.selectedIdx,
+				beatProgress: 0,
+				dimmed: state.openCardIdx >= 0 && state.openCardIdx !== index,
+			},
+		});
+		card.mesh.renderOrder = 50 + index;
+		group.add(card.mesh);
+		renderedCards.set(index, card);
+	}
+
+	function applyGroupPose(ctx: FrameContext): void {
+		if (!group) return;
+		if (!group.position || !group.rotation) return;
+		const px = ctx.pointerParallax?.x || 0;
+		const py = ctx.pointerParallax?.y || 0;
+		if (state.mode === "stage") {
+			group.renderOrder = 50;
+			group.position.y = Math.sin(ctx.uniforms.uTime.value * 0.3) * 0.04;
+			group.position.x = px * 0.10;
+			group.position.z = 0;
+			group.rotation.y = px * 0.025;
+			group.rotation.x = -py * 0.012;
+			group.rotation.z = 0;
+			return;
+		}
+		const detailOpen = state.openCardIdx >= 0;
+		const passiveAlwaysGroup = state.presence === "always" && !state.pinnedOpen && !detailOpen;
+		const liftedCardActive = state.selectedIdx >= 0;
+		group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
+		group.position.set(0, 0, 0);
+		group.rotation.y += (px * 0.018 - group.rotation.y) * 0.045;
+		group.rotation.x += (-py * 0.010 - group.rotation.x) * 0.045;
+		group.rotation.z += (0 - group.rotation.z) * 0.045;
 	}
 
 	function updateCardSpriteIfNeeded(

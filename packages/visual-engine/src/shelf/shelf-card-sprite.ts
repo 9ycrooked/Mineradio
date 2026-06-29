@@ -88,6 +88,7 @@ export function createShelfCardMesh(opts: CreateShelfCardMeshOptions): ShelfCard
 	);
 	const mesh = new opts.three.Mesh(geometry, material);
 	mesh.renderOrder = 50 + opts.index;
+	mesh.userData.shelfCardIndex = opts.index;
 	mesh.userData.action = makeShelfCardAction(opts.item);
 
 	const sprite: ShelfCardSprite = {

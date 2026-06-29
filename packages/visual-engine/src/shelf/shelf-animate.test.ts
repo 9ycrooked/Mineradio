@@ -1467,6 +1467,81 @@ test("ShelfManager rebuilds detail row meshes when content render window changes
 	expect(m.getContentList()?.pickRowAtScreen({ x: 400, y: 300 })?.row.id).toBe("song-12");
 });
 
+test("ShelfManager honors asyncBuild by staging card construction across frames", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 1;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+	const items = Array.from({ length: 30 }, (_, index) => ({ title: `Card ${index}` }));
+
+	m.setData(items, { asyncBuild: true });
+	m.update(makeCtx(uniforms, 16));
+
+	expect(m.getRenderedCardCount()).toBeGreaterThan(0);
+	expect(m.getRenderedCardCount()).toBeLessThan(SHELF_MAX_RENDER);
+
+	for (let frame = 0; frame < 8; frame++) {
+		uniforms.uTime.value += 1 / 60;
+		m.update(makeCtx(uniforms, 32 + frame * 16));
+	}
+	expect(m.getRenderedCardCount()).toBe(SHELF_MAX_RENDER);
+});
+
+test("ShelfManager applies baseline pointer rotation.x and render order in side mode", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 2;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+	m.setData([{ title: "A" }, { title: "B" }, { title: "C" }]);
+	m.setShelfVisibility(1);
+	m.setMode("side");
+	m.getState().centerTarget = 1;
+	m.getState().centerSmooth = 1;
+	m.update({
+		...makeCtx(uniforms, 16),
+		pointerParallax: { x: 0.4, y: 0.5 },
+	});
+
+	const center = renderedShelfCard(group, 1);
+	const above = renderedShelfCard(group, 0);
+	expect(center?.rotation.x).toBeCloseTo(-0.012, 3);
+	expect(above?.rotation.x).toBeGreaterThan(0.02);
+	expect(center?.renderOrder ?? 0).toBeGreaterThan(above?.renderOrder ?? 0);
+});
+
+test("ShelfManager applies baseline stage pointer posture and group drift", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 3;
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+	m.setData([{ title: "A" }, { title: "B" }, { title: "C" }]);
+	m.setShelfVisibility(1);
+	m.setMode("stage");
+	m.getState().centerTarget = 1;
+	m.getState().centerSmooth = 1;
+	m.update({
+		...makeCtx(uniforms, 16),
+		pointerParallax: { x: 0.4, y: 0.5 },
+	});
+
+	const center = renderedShelfCard(group, 1);
+	expect(center?.rotation.x).toBeCloseTo(0.086, 3);
+	expect(center?.rotation.y).toBeCloseTo(0.020, 3);
+	expect(group.position.y).toBeCloseTo(Math.sin(3 * 0.3) * 0.04, 5);
+	expect(group.position.x).toBeCloseTo(0.040, 5);
+	expect(group.rotation.y).toBeCloseTo(0.010, 5);
+	expect(group.rotation.x).toBeCloseTo(-0.006, 5);
+});
+
 function detailRowIndexes(group: import("three").Group): number[] {
 	return findDetailMeshes(group)
 		.filter((child) => (child as import("three").Object3D).userData?.shelfContentKind === "row")
@@ -1486,4 +1561,10 @@ function findDetailGroup(group: import("three").Group): import("three").Group | 
 	return group.children.find((child) =>
 		child.userData?.shelfContentDetailGroup === true
 	) as import("three").Group | undefined;
+}
+
+function renderedShelfCard(group: import("three").Group, shelfIndex: number): import("three").Mesh | undefined {
+	return group.children.find((child) =>
+		child.userData?.shelfCardIndex === shelfIndex
+	) as import("three").Mesh | undefined;
 }
