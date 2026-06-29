@@ -772,6 +772,10 @@ export function App({
   );
   const [userCapsulePeek, setUserCapsulePeek] = useState(false);
   const [visualGuideOpen, setVisualGuideOpen] = useState(false);
+  const visualGuidePlaylistRestoreRef = useRef<{
+    open: boolean;
+    tab: PlaylistPanelTab;
+  } | null>(null);
   const [playbackQualityReloadSeq, setPlaybackQualityReloadSeq] = useState(0);
   const [customLyricModalOpen, setCustomLyricModalOpen] = useState(false);
   const [customLyricText, setCustomLyricText] = useState("");
@@ -991,6 +995,14 @@ export function App({
     [showToast],
   );
 
+  const restoreVisualGuidePlaylistPanel = useCallback(() => {
+    const snapshot = visualGuidePlaylistRestoreRef.current;
+    if (!snapshot) return;
+    visualGuidePlaylistRestoreRef.current = null;
+    setPlaylistPanelTab(snapshot.tab);
+    if (!playlistPanelPinned) setPlaylistPanelOpen(snapshot.open);
+  }, [playlistPanelPinned]);
+
   const toggleUserCapsuleAutoHide = useCallback(() => {
     const next = !userCapsuleAutoHide;
     saveBooleanPreference(USER_CAPSULE_AUTO_HIDE_STORE_KEY, next);
@@ -1001,14 +1013,27 @@ export function App({
 
   const closeVisualGuide = useCallback((markSeen: boolean) => {
     if (markSeen) saveBooleanPreference(VISUAL_GUIDE_SEEN_STORE_KEY, true);
+    restoreVisualGuidePlaylistPanel();
     setVisualGuideOpen(false);
-  }, []);
+  }, [restoreVisualGuidePlaylistPanel]);
 
   const prepareVisualGuideStep = useCallback(
     (step: VisualGuideStep) => {
       if (step.selector === "#search-box") {
         setHomeSuppressed(false);
         focusSearch();
+      }
+      if (step.selector === "#playlist-panel") {
+        if (!visualGuidePlaylistRestoreRef.current) {
+          visualGuidePlaylistRestoreRef.current = {
+            open: playlistPanelOpen || playlistPanelPinned,
+            tab: playlistPanelTab,
+          };
+        }
+        setPlaylistPanelTab("playlists");
+        setPlaylistPanelOpen(true);
+      } else {
+        restoreVisualGuidePlaylistPanel();
       }
       if (step.selector === "#bottom-bar") revealConsole();
       if (step.selector === "#fx-fab") {
@@ -1021,7 +1046,15 @@ export function App({
         useShelfStore.getState().openShelf();
       }
     },
-    [focusSearch, revealConsole, setShelfMode],
+    [
+      focusSearch,
+      playlistPanelOpen,
+      playlistPanelPinned,
+      playlistPanelTab,
+      restoreVisualGuidePlaylistPanel,
+      revealConsole,
+      setShelfMode,
+    ],
   );
 
   const patchCustomCoverTrack = useCallback((target: Track, nextTrack: Track) => {

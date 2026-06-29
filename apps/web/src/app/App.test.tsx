@@ -1532,11 +1532,16 @@ test("App routes the logged-out Home library card to the baseline visual guide i
 		expect(host.querySelector("#visual-guide")?.classList.contains("show")).toBe(true);
 		expect(document.body.classList.contains("visual-guide-active")).toBe(true);
 		expect(host.querySelector("#visual-guide-title")?.textContent).toBe("Mineradio 是用来听歌的视觉播放器");
-		expect(host.querySelector("#visual-guide-progress")?.textContent).toBe("1 / 6");
+		expect(host.querySelector("#visual-guide-progress")?.textContent).toBe("1 / 7");
 
 		(host.querySelector("#visual-guide-next") as HTMLButtonElement).click();
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(host.querySelector("#visual-guide-progress")?.textContent).toBe("2 / 6");
+		expect(host.querySelector("#visual-guide-progress")?.textContent).toBe("2 / 7");
+
+		(host.querySelector("#visual-guide-next") as HTMLButtonElement).click();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(host.querySelector("#visual-guide-progress")?.textContent).toBe("3 / 7");
+		expect(host.querySelector("#playlist-panel")?.classList.contains("show")).toBe(true);
 
 		(host.querySelector("#visual-guide-next") as HTMLButtonElement).click();
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1548,6 +1553,7 @@ test("App routes the logged-out Home library card to the baseline visual guide i
 		}
 		expect(localStorage.getItem("mineradio-visual-guide-seen-v2")).toBe("1");
 		expect(host.querySelector("#visual-guide")?.classList.contains("show")).toBe(false);
+		expect(host.querySelector("#playlist-panel")?.classList.contains("show")).toBe(false);
 	} finally {
 		root.unmount();
 		host.remove();
