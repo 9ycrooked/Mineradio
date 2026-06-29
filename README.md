@@ -59,7 +59,9 @@ Tauri 主线使用 Tauri updater，endpoint 当前配置为：
 https://github.com/zzstar101/Mineradio/releases/latest/download/latest.json
 ```
 
-安装更新仍有签名、公钥、真实 manifest、低版本升级、Windows 安装/卸载和 release notes 等人工 gate。当前 README 不代表项目已经可以公开发布。
+本地可用 `bun run release-manifest:generate` 生成 Tauri 2 static `latest.json` 草案；B2 未签名时该 manifest 仅用于 detection-only 检测，不下载或安装更新。
+
+安装更新仍有签名、公钥、真实 GitHub Release 上传、低版本升级、Windows 安装/卸载和 release notes 等人工 gate。当前 README 不代表项目已经可以公开发布。
 
 ## 第三方音乐平台说明
 
