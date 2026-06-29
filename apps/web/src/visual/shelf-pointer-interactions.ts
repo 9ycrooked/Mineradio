@@ -8,6 +8,7 @@ import {
 	type ShelfPointerRaycastHitGetter,
 	type ShelfPointerRaycastInfo,
 	type ShelfSelectSoundVariant,
+	type ShelfCardAction,
 } from "@mineradio/visual-engine";
 
 export interface ShelfPointerInteractionTarget {
@@ -23,6 +24,14 @@ export interface ShelfDetailRowClickPayload {
 }
 
 export type ShelfDetailRowAction = "row" | "like" | "collect" | "next" | "play";
+
+export interface ShelfPlayPlaylistPayload {
+	index: number;
+	playlistId?: string;
+	provider?: string;
+	title?: string;
+	action: Extract<ShelfCardAction, { kind: "loadPlaylist" }>;
+}
 
 export interface ShelfPointerInteractionOptions {
 	target: ShelfPointerInteractionTarget;
@@ -60,6 +69,7 @@ export interface ShelfPointerInteractionOptions {
 	setShelfMode?: (mode: "side") => void;
 	onBeforeShelfWheelScroll?: (direction: number) => boolean;
 	onShelfPlayQueueIndex?: (index: number) => void;
+	onShelfPlayPlaylist?: (payload: ShelfPlayPlaylistPayload) => void;
 	onShelfDetailRowClick?: (payload: ShelfDetailRowClickPayload) => void;
 	onShelfSelectFeedback?: (direction: number, variant: ShelfSelectSoundVariant) => void;
 	onOpenQueuePanel?: () => void;
@@ -432,6 +442,15 @@ export function attachShelfPointerInteractionWiring(
 					immediate: true,
 					portrait: opts.getPortrait(),
 					wallpaperSafe: opts.getWallpaperSafe(),
+				});
+			},
+			onPlayPlaylist: (playHit, action) => {
+				opts.onShelfPlayPlaylist?.({
+					index: playHit.index,
+					provider: action.provider,
+					playlistId: action.playlistId,
+					title: action.title,
+					action,
 				});
 			},
 		});

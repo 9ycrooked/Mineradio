@@ -44,7 +44,7 @@ import {
 	updateAndApplyFreeCamera,
 } from "./free-camera-host";
 import { attachShelfPointerInteractionWiring } from "./shelf-pointer-interactions";
-import type { ShelfDetailRowClickPayload } from "./shelf-pointer-interactions";
+import type { ShelfDetailRowClickPayload, ShelfPlayPlaylistPayload } from "./shelf-pointer-interactions";
 import type { ShelfDetailContentListController } from "./shelf-detail-data";
 import { createShelfPaneWheelSwitcher } from "./shelf-pane-switch";
 import { createJsDelivrAiDepthEstimator } from "./ai-depth-estimator";
@@ -83,6 +83,7 @@ export interface VisualEngineRefs {
 	beatMapRef?: RefObject<unknown>;
 	beatMapVersionRef?: RefObject<number>;
 	onShelfPlayQueueIndexRef?: RefObject<((index: number) => void) | undefined>;
+	onShelfPlayPlaylistRef?: RefObject<((payload: ShelfPlayPlaylistPayload) => void) | undefined>;
 	onShelfDetailRowClickRef?: RefObject<((payload: ShelfDetailRowClickPayload) => void) | undefined>;
 	onShelfOpenDetailContentRef?: RefObject<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListController) => void) | undefined>;
 	onShelfPaneChangeRef?: RefObject<((pane: ShelfPane) => void) | undefined>;
@@ -798,6 +799,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				setShelfMode: (mode) => setRuntimeShelfMode(refs.shelfModeRef, mode, refs.onShelfModeChange),
 				onBeforeShelfWheelScroll: (direction) => shelfPaneWheelSwitcher.step(direction),
 				onShelfPlayQueueIndex: (index) => refs.onShelfPlayQueueIndexRef?.current?.(index),
+				onShelfPlayPlaylist: (payload) => refs.onShelfPlayPlaylistRef?.current?.(payload),
 				onShelfDetailRowClick: (payload) => refs.onShelfDetailRowClickRef?.current?.(payload),
 				onShelfSelectFeedback: (direction, variant) => {
 					shelfSelectSound.play(direction, variant);
@@ -846,5 +848,5 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			handles = null;
 			refs.lifecycleRef.current = null;
 		};
-	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.shelfMergeCollectionsRef, refs.shelfMineCountRef, refs.shelfFavCountRef, refs.wallpaperSafeRef, refs.secondaryLeftDisplaySeamGuardRef, refs.coverUrlRef, refs.coverUrlVersionRef, refs.beatMapKeyRef, refs.beatMapRef, refs.beatMapVersionRef, refs.onShelfPlayQueueIndexRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.onShelfPaneChangeRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
+	}, [refs.hostRef, refs.audioElementRef, refs.positionRef, refs.isPlayingRef, refs.lyricLinesRef, refs.shelfItemsRef, refs.shelfItemsVersionRef, refs.splashActiveRef, refs.homeActiveRef, refs.shelfModeRef, refs.shelfCameraModeRef, refs.shelfPresenceRef, refs.shelfMergeCollectionsRef, refs.shelfMineCountRef, refs.shelfFavCountRef, refs.wallpaperSafeRef, refs.secondaryLeftDisplaySeamGuardRef, refs.coverUrlRef, refs.coverUrlVersionRef, refs.beatMapKeyRef, refs.beatMapRef, refs.beatMapVersionRef, refs.onShelfPlayQueueIndexRef, refs.onShelfPlayPlaylistRef, refs.onShelfDetailRowClickRef, refs.onShelfOpenDetailContentRef, refs.onShelfPaneChangeRef, refs.lifecycleRef, refs.coverResolution, refs.onShelfModeChange]);
 }

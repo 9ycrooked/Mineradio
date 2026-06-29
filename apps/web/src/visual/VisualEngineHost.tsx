@@ -10,7 +10,7 @@ import {
 	type StageLyricsMotionSnapshot,
 } from "@mineradio/visual-engine";
 import { useVisualEngine } from "./useVisualEngine";
-import type { ShelfDetailRowClickPayload } from "./shelf-pointer-interactions";
+import type { ShelfDetailRowClickPayload, ShelfPlayPlaylistPayload } from "./shelf-pointer-interactions";
 import type { ShelfDetailContentListController } from "./shelf-detail-data";
 import { PlayerController } from "../audio/player-controller";
 import { resolveShelfItems } from "./shelf-items";
@@ -41,6 +41,7 @@ export interface VisualEngineHostProps {
 	secondaryLeftDisplaySeamGuardActive?: boolean;
 	onShelfModeChange?: (mode: ShelfMode) => void;
 	onShelfPlayQueueIndex?: (index: number) => void;
+	onShelfPlayPlaylist?: (payload: ShelfPlayPlaylistPayload) => void;
 	onShelfDetailRowClick?: (payload: ShelfDetailRowClickPayload) => void;
 	onShelfOpenDetailContent?: (payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListController) => void;
 	desktopLyricsMotionRef?: RefObject<DesktopLyricsMotionSnapshot>;
@@ -171,6 +172,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	const shelfFavCountRef = useRef<number>(0);
 	const wallpaperSafeRef = useRef<boolean>(isWallpaperSafeShelfPreset(props.fxDefaults?.preset));
 	const onShelfPlayQueueIndexRef = useRef<((index: number) => void) | undefined>(props.onShelfPlayQueueIndex);
+	const onShelfPlayPlaylistRef = useRef<((payload: ShelfPlayPlaylistPayload) => void) | undefined>(props.onShelfPlayPlaylist);
 	const onShelfDetailRowClickRef = useRef<((payload: ShelfDetailRowClickPayload) => void) | undefined>(props.onShelfDetailRowClick);
 	const onShelfOpenDetailContentRef = useRef<((payload: ShelfOpenDetailContentPayload, writer: ShelfDetailContentListController) => void) | undefined>(props.onShelfOpenDetailContent);
 	const onShelfPaneChangeRef = useRef<((pane: ShelfPane) => void) | undefined>(undefined);
@@ -198,6 +200,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	shelfMergeCollectionsRef.current = visualShelfSettings.mergeCollections;
 	wallpaperSafeRef.current = isWallpaperSafeShelfPreset(props.fxDefaults?.preset);
 	onShelfPlayQueueIndexRef.current = props.onShelfPlayQueueIndex;
+	onShelfPlayPlaylistRef.current = props.onShelfPlayPlaylist;
 	onShelfDetailRowClickRef.current = props.onShelfDetailRowClick;
 	onShelfOpenDetailContentRef.current = props.onShelfOpenDetailContent;
 	onShelfPaneChangeRef.current = setShelfPane;
@@ -291,6 +294,7 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 		shelfFavCountRef,
 		wallpaperSafeRef,
 		onShelfPlayQueueIndexRef,
+		onShelfPlayPlaylistRef,
 		onShelfDetailRowClickRef,
 		onShelfOpenDetailContentRef,
 		onShelfPaneChangeRef,

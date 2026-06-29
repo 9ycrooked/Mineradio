@@ -1201,6 +1201,95 @@ test("App applies and clears a custom cover image from the baseline import contr
 	}
 });
 
+test("App plays centered shelf playlist hotspots by loading the playlist into the queue", async () => {
+	await import("../../../../packages/visual-engine/src/runtime/happy-dom-preload");
+	(globalThis as unknown as { localStorage: Storage }).localStorage = window.localStorage;
+	const restoreAudio = installAppStubAudio();
+	localStorage.clear();
+	usePlaybackStore.getState().clearQueue();
+	useLyricsStore.getState().reset();
+
+	const playlistCalls: unknown[] = [];
+	const tracks: Track[] = [
+		{
+			provider: "netease",
+			id: "song-1",
+			sourceId: "song-1",
+			title: "Shelf Song",
+			artists: ["Alice"],
+			album: "Shelf Mix",
+			coverUrl: "",
+			durationMs: 100000,
+			qualityHints: [],
+			playableState: "playable",
+		},
+	];
+	const fakeClient = {
+		async playlistDetail(provider: string, id: string) {
+			playlistCalls.push({ provider, id });
+			return { provider, id, name: "Shelf Mix", coverUrl: "", trackCount: tracks.length, tracks };
+		},
+		async resolveSongUrl() {
+			return { url: "https://example.com/audio.mp3", quality: "standard", proxied: true };
+		},
+		audioProxyUrl(url: string) {
+			return url;
+		},
+		async lyric(track: Track) {
+			return {
+				provider: track.provider,
+				trackId: track.id,
+				lines: [],
+				hasTranslation: false,
+				isWordByWord: false,
+			};
+		},
+	} as unknown as SidecarClient;
+
+	let triggerShelfPlaylist: (() => void) | null = null;
+	function MockVisual(props: VisualEngineHostProps) {
+		triggerShelfPlaylist = () => props.onShelfPlayPlaylist?.({
+			index: 2,
+			provider: "netease",
+			playlistId: "pl-1",
+			title: "Card Mix",
+			action: { kind: "loadPlaylist", provider: "netease", playlistId: "pl-1", title: "Card Mix" },
+		});
+		return <div id="visual-host" />;
+	}
+	const rootConfig: RuntimeConfig = {
+		sidecarBaseUrl: "http://127.0.0.1:39999",
+		appDataDir: "",
+		appVersion: "0.0.0-test",
+		schemaVersion: "0.1.0",
+		updaterPublicKeyConfigured: false,
+	};
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const root = createRoot(host);
+
+	try {
+		flushSync(() => root.render(<App SplashComponent={() => null} VisualComponent={MockVisual} createSidecarClient={() => fakeClient} initialRuntimeConfig={rootConfig} />));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		flushSync(() => triggerShelfPlaylist?.());
+		for (let i = 0; i < 12 && usePlaybackStore.getState().queue.length === 0; i += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
+		expect(playlistCalls).toEqual([{ provider: "netease", id: "pl-1" }]);
+		expect(usePlaybackStore.getState().queue).toEqual(tracks);
+		expect(usePlaybackStore.getState().currentTrack).toBe(tracks[0]);
+		expect(usePlaybackStore.getState().isPlaying).toBe(true);
+	} finally {
+		root.unmount();
+		host.remove();
+		usePlaybackStore.getState().clearQueue();
+		useLyricsStore.getState().reset();
+		localStorage.clear();
+		restoreAudio();
+	}
+});
+
 test("App opens the baseline collect picker for shelf detail collect and adds only after a playlist is chosen", async () => {
 	await import("../../../../packages/visual-engine/src/runtime/happy-dom-preload");
 	(globalThis as unknown as { localStorage: Storage }).localStorage = window.localStorage;

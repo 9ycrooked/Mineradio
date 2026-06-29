@@ -448,6 +448,7 @@ export type {
 export {
 	activateShelfPrimaryHit,
 	getShelfCardAction,
+	isShelfPlaylistPlayHit,
 } from "./shelf/shelf-activation";
 export type {
 	ShelfPrimaryActivationOptions,

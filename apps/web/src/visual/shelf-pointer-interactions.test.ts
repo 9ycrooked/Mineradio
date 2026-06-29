@@ -137,11 +137,12 @@ function makeContextMenuEvent(opts: {
 	};
 }
 
-function makeHit(index: number, action: unknown = { kind: "playQueue", index }): ShelfRaycastCardHit {
+function makeHit(index: number, action: unknown = { kind: "playQueue", index }, uv?: { x: number; y: number }): ShelfRaycastCardHit {
 	return {
 		index,
 		item: { title: `Card ${index}` },
 		mesh: { userData: { action } } as never,
+		uv: uv as never,
 	};
 }
 
@@ -1775,6 +1776,47 @@ test("attachShelfPointerInteractionWiring closes open detail on click miss and s
 	expect(focus).toEqual([["shelf-side", { immediate: true, portrait: true, wallpaperSafe: false }]]);
 	expect(scrolled).toEqual([2]);
 	expect(event.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
+});
+
+test("attachShelfPointerInteractionWiring plays centered playlist card hotspots without opening detail", () => {
+	const target = new FakePointerTarget();
+	const opened: unknown[] = [];
+	const focus: unknown[] = [];
+	const played: unknown[] = [];
+	const action = { kind: "loadPlaylist", playlistId: "p3", provider: "netease", title: "Mix 3" };
+	const cleanup = attachShelfPointerInteractionWiring({
+		target,
+		shelfManager: makeShelfManagerMock({
+			getMode: () => "stage",
+			getSnapshot: closedSnapshot,
+			setSelectedIdx: () => {},
+			clearSelected: () => {},
+			getCenterIdx: () => 3,
+			scrollBy: () => {},
+			openDetail: (...args) => opened.push(args),
+		}),
+		cinema: { setFocusZone: (type, opts) => focus.push([type, opts]) },
+		getHit: () => makeHit(3, action, { x: 0.6, y: 0.2 }),
+		getSplashActive: () => false,
+		getPortrait: () => true,
+		getWallpaperSafe: () => false,
+		getViewportWidth: () => 1200,
+		getViewportHeight: () => 900,
+		onShelfPlayPlaylist: (payload) => played.push(payload),
+	});
+
+	target.emit("click", { clientX: 10, clientY: 20, target: null });
+	cleanup();
+
+	expect(opened).toEqual([]);
+	expect(focus).toEqual([]);
+	expect(played).toEqual([{
+		index: 3,
+		provider: "netease",
+		playlistId: "p3",
+		title: "Mix 3",
+		action,
+	}]);
 });
 
 test("attachShelfPointerInteractionWiring does not use padded fallback when detail miss strict card raycast misses", () => {

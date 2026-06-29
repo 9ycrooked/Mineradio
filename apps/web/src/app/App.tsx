@@ -95,10 +95,15 @@ import {
   createPodcastRadioDetailOpener,
   createShelfDetailContentLoader,
   handleShelfDetailRowAction,
+  mapPodcastItemsToShelfRows,
+  mapShelfDetailRowToTrack,
   type ShelfDetailContentListController,
 } from "../visual/shelf-detail-data";
+import type { ShelfPlayPlaylistPayload } from "../visual/shelf-pointer-interactions";
+import { isPlayable } from "../components/search/play-search-result";
 import {
   ensureLyricFallbackPayload,
+  ProviderIdSchema,
   type DiscoverHomeResponse,
   type PlaybackQuality,
   type PlaylistSummary,
@@ -1283,6 +1288,59 @@ export function App({
     ],
   );
 
+  const playShelfPlaylist = useCallback(
+    async (payload: ShelfPlayPlaylistPayload) => {
+      if (!sidecarClient) {
+        showToast("sidecar 未连接，稍后再试");
+        return;
+      }
+      const playlistId = String(payload.playlistId || "").trim();
+      if (!playlistId) {
+        showToast("歌单信息不完整");
+        return;
+      }
+
+      try {
+        let tracks: Track[] = [];
+        let toastTitle = payload.title || "歌单";
+        if (playlistId.startsWith("podcast:")) {
+          const key = playlistId.slice("podcast:".length);
+          if (!key) {
+            showToast("播客信息不完整");
+            return;
+          }
+          const detail = await sidecarClient.podcastMyItems(key, 36, 0);
+          tracks = mapPodcastItemsToShelfRows(detail)
+            .map((row) => mapShelfDetailRowToTrack(row))
+            .filter((track): track is Track => !!track && isPlayable(track.playableState));
+          toastTitle = detail.title || payload.title || "播客";
+        } else {
+          const parsedProvider = ProviderIdSchema.safeParse(payload.provider);
+          if (!parsedProvider.success) {
+            showToast("歌单信息不完整");
+            return;
+          }
+          const detail = await sidecarClient.playlistDetail(parsedProvider.data, playlistId);
+          tracks = detail.tracks;
+          toastTitle = detail.name || payload.title || "歌单";
+        }
+
+        if (!tracks.length) {
+          showToast("歌单暂时没有可播放歌曲");
+          return;
+        }
+        usePlaybackStore.getState().setQueue(tracks);
+        usePlaybackStore.getState().playAt(0);
+        enterPlaybackSurface();
+        showToast(toastTitle);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "歌单载入失败";
+        showToast(message);
+      }
+    },
+    [enterPlaybackSurface, showToast, sidecarClient],
+  );
+
   const playHomePrivate = useCallback(async () => {
     const discover = homeDiscover?.loggedIn ? homeDiscover : await refreshHomeDiscover();
     if (!homeHasLogin() && !discover?.loggedIn) {
@@ -2461,6 +2519,7 @@ export function App({
         onShelfPlayQueueIndex={(index) =>
           usePlaybackStore.getState().playAt(index)
         }
+        onShelfPlayPlaylist={(payload) => void playShelfPlaylist(payload)}
         onShelfDetailRowClick={(payload) => {
           void handleShelfDetailRowAction({
             ...payload,

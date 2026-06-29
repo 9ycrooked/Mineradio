@@ -6,6 +6,7 @@ export type ShelfPrimaryHit = Pick<ShelfRaycastCardHit, "index" | "item" | "mesh
 export type ShelfPrimaryActivationResult =
 	| { kind: "scroll"; index: number; delta: number }
 	| { kind: "playQueue"; index: number; cardIndex: number }
+	| { kind: "playPlaylist"; index: number; action: Extract<ShelfCardAction, { kind: "loadPlaylist" }> }
 	| { kind: "openDetail"; index: number; action: Extract<ShelfCardAction, { kind: "loadPlaylist" }> }
 	| { kind: "openQueuePanel"; index: number }
 	| { kind: "none"; index: number };
@@ -20,6 +21,10 @@ export interface ShelfPrimaryActivationOptions {
 		hit: ShelfPrimaryHit,
 		action: Extract<ShelfCardAction, { kind: "loadPlaylist" }>,
 	) => void;
+	onPlayPlaylist?: (
+		hit: ShelfPrimaryHit,
+		action: Extract<ShelfCardAction, { kind: "loadPlaylist" }>,
+	) => void;
 	onOpenQueuePanel?: () => void;
 }
 
@@ -31,6 +36,12 @@ export function getShelfCardAction(hit: ShelfPrimaryHit): ShelfCardAction | null
 		return action as ShelfCardAction;
 	}
 	return null;
+}
+
+export function isShelfPlaylistPlayHit(hit: ShelfPrimaryHit): boolean {
+	const uv = hit.uv;
+	if (!uv) return false;
+	return uv.x >= 0.49 && uv.x <= 0.72 && uv.y >= 0.13 && uv.y <= 0.42;
 }
 
 export function activateShelfPrimaryHit(
@@ -51,6 +62,10 @@ export function activateShelfPrimaryHit(
 		return { kind: "playQueue", index: queueIndex, cardIndex: opts.hit.index };
 	}
 	if (action.kind === "loadPlaylist") {
+		if (isShelfPlaylistPlayHit(opts.hit)) {
+			opts.onPlayPlaylist?.(opts.hit, action);
+			return { kind: "playPlaylist", index: opts.hit.index, action };
+		}
 		opts.openDetail?.(opts.hit.index, {
 			playlistId: action.playlistId,
 			title: action.title,
