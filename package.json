@@ -24,6 +24,7 @@
     "packaged-notices:check": "node scripts/check-packaged-notices.mjs",
     "release-csp:check": "node scripts/check-release-csp.mjs",
     "release-identity:check": "node scripts/check-release-identity.mjs",
+    "sidecar-runtime-policy:check": "node scripts/check-sidecar-runtime-policy.mjs",
     "updater-policy:check": "node scripts/check-updater-policy.mjs"
   },
   "build": {
