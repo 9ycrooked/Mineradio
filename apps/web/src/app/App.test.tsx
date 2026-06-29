@@ -131,6 +131,16 @@ test("Home shell CSS includes the baseline stable panel glass final overrides", 
 	expect(css).toContain("background: rgba(0, 0, 0, .72) !important;");
 });
 
+test("player console CSS hides migration-only controls from the baseline main bar", async () => {
+	const css = await fetch(new URL("../styles.css", import.meta.url)).then((response) => response.text());
+	expect(css).toContain("body.simple-mode #bottom-bar");
+	expect(css).toContain(".console-lyric-source-row,\n.console-shelf-controls,\n.console-host-chrome");
+	expect(css).toContain("display: none !important;");
+	expect(css).toContain("#quality-btn.quality-pill");
+	expect(css).toContain("background: rgba(0, 0, 0, .10);");
+	expect(css).toContain("html.control-glass-svg-ok #play-btn");
+});
+
 test("App unmounts SplashHost after splash dismissed instead of leaving hidden splash listeners alive", async () => {
 	await import("../../../../packages/visual-engine/src/runtime/happy-dom-preload");
 	const host = document.createElement("div");

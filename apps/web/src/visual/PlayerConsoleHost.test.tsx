@@ -11,6 +11,8 @@ test("PlayerConsoleHost server-renders the bottom-bar markup", () => {
 	expect(html).toContain('id="play-mode-btn"');
 	expect(html).toContain('id="control-cover"');
 	expect(html).toContain('id="time-display"');
+	expect(html.indexOf('id="quality-control"')).toBeLessThan(html.indexOf('id="heart-btn"'));
+	expect(html).toContain('<path d="M12 5v14"></path><path d="M5 12h14"></path>');
 });
 
 test("PlayerConsoleHost renders window chrome stub buttons that accept callbacks without throwing", () => {

@@ -370,6 +370,30 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 							<div id="control-artist" className="control-artist">{props.currentArtist ?? "等待播放"}</div>
 						</div>
 					</div>
+					<div id="quality-control" className="quality-control">
+						<button id="quality-btn" className={qualityOpen ? "ctrl-btn quality-pill active" : "ctrl-btn quality-pill"} ref={registerNormal("quality-btn")} type="button" title={`音质: ${quality.label}`} aria-label="音质" onClick={() => setQualityOpen((open) => !open)}>
+							<span id="quality-btn-label">{quality.short}</span>
+						</button>
+						<div className={qualityOpen ? "quality-popover show" : "quality-popover"} onClick={(event) => event.stopPropagation()}>
+							{PLAYBACK_QUALITY_OPTIONS.map((option) => (
+								<button
+									key={option.value}
+									className={option.value === quality.value ? "quality-option active" : "quality-option"}
+									type="button"
+									data-quality={option.value}
+									data-svip={option.svip ? "1" : undefined}
+									title={option.label}
+									onClick={() => {
+										setQualityOpen(false);
+										onQualityChangeRef.current?.(option.value);
+									}}
+								>
+									<span>{option.label}</span>
+									<small>{option.detail}</small>
+								</button>
+							))}
+						</div>
+					</div>
 					<button
 						id="heart-btn"
 						ref={registerNormal("heart-btn")}
@@ -384,7 +408,7 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 						<svg viewBox="0 0 24 24" aria-hidden="true" width="21" height="21" fill={currentLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}><path d="M20.8 4.6c-1.7-1.7-4.5-1.7-6.2 0L12 7.2 9.4 4.6c-1.7-1.7-4.5-1.7-6.2 0s-1.7 4.5 0 6.2L12 19.6l8.8-8.8c1.7-1.7 1.7-4.5 0-6.2Z" /></svg>
 					</button>
 					<button id="collect-btn" ref={registerNormal("collect-btn")} className="ctrl-btn" type="button" title="收藏到歌单" aria-label="收藏到歌单" onClick={() => onCollectCurrentRef.current?.()}>
-						<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2}><path d="M4 19.5V5a2 2 0 0 1 2-2h12v18l-6-3-6 3a2 2 0 0 1-2-1.5Z" /></svg>
+						<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2}><path d="M12 5v14" /><path d="M5 12h14" /></svg>
 					</button>
 				</div>
 				<div className="control-cluster transport">
@@ -433,30 +457,6 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 					</div>
 				</div>
 				<div className="control-cluster modes">
-					<div id="quality-control" className="quality-control">
-						<button id="quality-btn" className={qualityOpen ? "ctrl-btn quality-btn active" : "ctrl-btn quality-btn"} ref={registerNormal("quality-btn")} type="button" title={`音质: ${quality.label}`} aria-label="音质" onClick={() => setQualityOpen((open) => !open)}>
-							<span id="quality-btn-label">{quality.short}</span>
-						</button>
-						<div className={qualityOpen ? "quality-popover show" : "quality-popover"} onClick={(event) => event.stopPropagation()}>
-							{PLAYBACK_QUALITY_OPTIONS.map((option) => (
-								<button
-									key={option.value}
-									className={option.value === quality.value ? "quality-option active" : "quality-option"}
-									type="button"
-									data-quality={option.value}
-									data-svip={option.svip ? "1" : undefined}
-									title={option.label}
-									onClick={() => {
-										setQualityOpen(false);
-										onQualityChangeRef.current?.(option.value);
-									}}
-								>
-									<span>{option.label}</span>
-									<small>{option.detail}</small>
-								</button>
-							))}
-						</div>
-					</div>
 					<div id="volume-control" className="volume-control">
 						<button id="volume-btn" className={volumeOpen ? "ctrl-btn active" : "ctrl-btn"} ref={registerNormal("volume-btn")} type="button" title="音量" aria-label="音量" onClick={() => setVolumeOpen((open) => !open)} onDoubleClick={() => onToggleMuteRef.current?.()}>
 							<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2}><path d="M11 5 6 9H3v6h3l5 4V5Z" />{volumePct > 0 ? <path d="M15.5 8.5a5 5 0 0 1 0 7" /> : <path d="M16 9l5 5M21 9l-5 5" />}</svg>
