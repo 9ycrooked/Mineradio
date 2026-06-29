@@ -8,6 +8,7 @@ import {
 	cloneFxState,
 	createRenderLoop,
 	createRenderer,
+	attachRendererResizeSync,
 	createShelfManagerWithThree,
 	createShelfPointerRaycastFocus,
 	createShelfPointerRaycastHitGetter,
@@ -99,6 +100,7 @@ interface MountedHandles {
 	offLyrics: () => void;
 	offAudio: () => void;
 	offHomeAudio: () => void;
+	offResize: () => void;
 	offShelfFocus: () => void;
 	offShelfPointerInteractions: () => void;
 	offFreeCamera: () => void;
@@ -340,6 +342,10 @@ function disposeHandles(handles: MountedHandles | null): void {
 	} catch {
 	}
 	try {
+		handles.offResize();
+	} catch {
+	}
+	try {
 		handles.offShelfFocus();
 	} catch {
 	}
@@ -415,6 +421,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				renderer.dispose();
 				return;
 			}
+			const offResize = attachRendererResizeSync(host, renderer);
+			renderer.resize();
 			const cinema = createCinemaCamera({
 				camera: renderer.camera,
 				getCurrentTime: () => refs.positionRef.current / 1000,
@@ -442,6 +450,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				homeVisual.dispose();
 				audioEngine.dispose();
 				cinema.dispose();
+				offResize();
 				renderer.dispose();
 				return;
 			}
@@ -462,6 +471,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				homeVisual.dispose();
 				audioEngine.dispose();
 				cinema.dispose();
+				offResize();
 				renderer.dispose();
 				return;
 			}
@@ -478,6 +488,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				homeVisual.dispose();
 				audioEngine.dispose();
 				cinema.dispose();
+				offResize();
 				renderer.dispose();
 				return;
 			}
@@ -664,6 +675,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				offCamera();
 				offHome();
 				offHomeAudio();
+				offResize();
 				renderLoop.dispose();
 				lifecycle.dispose();
 				connectorParticles.dispose();
@@ -747,6 +759,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				offLyrics,
 				offAudio,
 				offHomeAudio,
+				offResize,
 				offShelfFocus,
 				offShelfPointerInteractions,
 				offFreeCamera,

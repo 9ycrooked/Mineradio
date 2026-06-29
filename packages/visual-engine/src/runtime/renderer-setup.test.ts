@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import "./happy-dom-preload";
-import { createRenderer, type ThreeFactory, type RendererHandle } from "./renderer-setup";
+import { attachRendererResizeSync, createRenderer, type ThreeFactory, type RendererHandle } from "./renderer-setup";
 
 interface FakeThree {
 	scene: { background: unknown };
@@ -10,13 +10,16 @@ interface FakeThree {
 		near: number;
 		far: number;
 		position: { x: number; y: number; z: number };
+		updateProjectionMatrixCalls: number;
 		lookAt: (v: unknown) => void;
 		updateProjectionMatrix: () => void;
 	};
 	renderer: {
 		domElement: HTMLCanvasElement;
+		pixelRatioCalls: number[];
+		sizeCalls: Array<{ width: number; height: number; updateStyle?: boolean }>;
 		setPixelRatio: (n: number) => void;
-		setSize: (w: number, h: number) => void;
+		setSize: (w: number, h: number, updateStyle?: boolean) => void;
 		setClearColor: (c: number, a: number) => void;
 		render: () => void;
 		dispose: () => void;
@@ -30,14 +33,23 @@ function makeFakeThree(): FakeThree & ThreeFactory {
 		near: 0.1,
 		far: 100,
 		position: { x: 0, y: 0, z: 0 },
+		updateProjectionMatrixCalls: 0,
 		lookAt: () => {},
-		updateProjectionMatrix: () => {},
+		updateProjectionMatrix() {
+			this.updateProjectionMatrixCalls += 1;
+		},
 	};
 	const domElement = document.createElement("canvas");
 	const renderer = {
 		domElement,
-		setPixelRatio: () => {},
-		setSize: () => {},
+		pixelRatioCalls: [] as number[],
+		sizeCalls: [] as Array<{ width: number; height: number; updateStyle?: boolean }>,
+		setPixelRatio(n: number) {
+			this.pixelRatioCalls.push(n);
+		},
+		setSize(width: number, height: number, updateStyle?: boolean) {
+			this.sizeCalls.push({ width, height, updateStyle });
+		},
 		setClearColor: () => {},
 		render: () => {},
 		dispose: () => {},
@@ -83,4 +95,54 @@ test("createRenderer dispose removes domElement and calls renderer.dispose", asy
 	handle.dispose();
 	expect(disposed).toBe(true);
 	expect(container.contains(fake.renderer.domElement)).toBe(false);
+});
+
+test("renderer resize refreshes DPR, size, camera aspect, and projection matrix", async () => {
+	const fake = makeFakeThree();
+	const container = document.createElement("div");
+	Object.defineProperty(container, "clientWidth", { value: 900, configurable: true });
+	Object.defineProperty(container, "clientHeight", { value: 600, configurable: true });
+	const handle = await createRenderer(container, { threeFactory: fake, pixelRatio: 1 });
+	Object.defineProperty(container, "clientWidth", { value: 1440, configurable: true });
+	Object.defineProperty(container, "clientHeight", { value: 810, configurable: true });
+	handle.resize();
+	expect(fake.renderer.sizeCalls.at(-1)).toEqual({ width: 1440, height: 810, updateStyle: false });
+	expect(fake.camera.aspect).toBeCloseTo(1440 / 810, 5);
+	expect(fake.camera.updateProjectionMatrixCalls).toBe(1);
+});
+
+test("attachRendererResizeSync mirrors baseline immediate and delayed viewport refreshes", async () => {
+	const fake = makeFakeThree();
+	const container = document.createElement("div");
+	Object.defineProperty(container, "clientWidth", { value: 1280, configurable: true });
+	Object.defineProperty(container, "clientHeight", { value: 720, configurable: true });
+	const handle = await createRenderer(container, { threeFactory: fake, pixelRatio: 1 });
+	const delays: number[] = [];
+	const callbacks: Array<() => void> = [];
+	const listeners = new Map<string, EventListener>();
+	const win = {
+		addEventListener(type: string, listener: EventListener) {
+			listeners.set(type, listener);
+		},
+		removeEventListener(type: string, listener: EventListener) {
+			if (listeners.get(type) === listener) listeners.delete(type);
+		},
+		setTimeout(callback: () => void, delay: number) {
+			delays.push(delay);
+			callbacks.push(callback);
+			return delays.length;
+		},
+		clearTimeout() {},
+		devicePixelRatio: 1.25,
+	};
+	const off = attachRendererResizeSync(container, handle, { window: win });
+	Object.defineProperty(container, "clientWidth", { value: 1920, configurable: true });
+	Object.defineProperty(container, "clientHeight", { value: 1080, configurable: true });
+	listeners.get("resize")?.(new Event("resize"));
+	expect(delays).toEqual([48, 140, 320]);
+	expect(fake.renderer.sizeCalls.at(-1)).toEqual({ width: 1920, height: 1080, updateStyle: false });
+	callbacks.forEach((callback) => callback());
+	expect(fake.camera.updateProjectionMatrixCalls).toBe(4);
+	off();
+	expect(listeners.has("resize")).toBe(false);
 });

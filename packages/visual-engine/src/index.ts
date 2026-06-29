@@ -93,8 +93,8 @@ export type {
 	RtStateView,
 } from "./audio/beat-engine";
 
-export { createRenderer } from "./runtime/renderer-setup";
-export type { RendererHandle, RendererSetupOptions, ThreeModule, ThreeFactory } from "./runtime/renderer-setup";
+export { attachRendererResizeSync, createRenderer } from "./runtime/renderer-setup";
+export type { RendererHandle, RendererResizeOptions, RendererResizeSyncOptions, RendererSetupOptions, ThreeModule, ThreeFactory } from "./runtime/renderer-setup";
 export { createRenderLoop } from "./runtime/render-loop";
 export type { RenderLoop, RenderLoopOptions } from "./runtime/render-loop";
 export { createCinemaCamera } from "./runtime/cinema-camera";
