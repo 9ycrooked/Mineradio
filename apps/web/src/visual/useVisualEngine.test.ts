@@ -73,5 +73,18 @@ test("resolveStageLyricLayoutOptions carries baseline camera lock and layout con
 		lyricOffsetZ: 0.8,
 		lyricTiltX: 9,
 		lyricTiltY: -11,
+		preset: undefined,
+		skullLyricEdgeGuard: false,
 	});
+});
+
+test("resolveStageLyricLayoutOptions enables skull edge guard while skull orbit is centered", () => {
+	const layout = resolveStageLyricLayoutOptions({
+		preset: 6,
+		lyricCameraLock: false,
+		lyricScale: 1.4,
+	}, {
+		orbitCenterLocked: true,
+	});
+	expect(layout.skullLyricEdgeGuard).toBe(true);
 });

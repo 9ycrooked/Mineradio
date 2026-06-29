@@ -99,6 +99,7 @@ export interface LyricLayoutOptions {
 	lyricTiltX?: number;
 	lyricTiltY?: number;
 	preset?: number;
+	skullLyricEdgeGuard?: boolean;
 }
 function clamp(v: number, lo: number, hi: number): number {
 	if (!isFinite(v)) return lo;
@@ -308,6 +309,7 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 		lockBaseDistance: number;
 		wallpaperLyricLock: boolean;
 		wallpaperShelfLyrics: boolean;
+		skullLyricEdgeGuard: boolean;
 	} {
 		const raw = opts.lyricLayoutOptionsSupplier?.() ?? {};
 		const layout = {
@@ -322,6 +324,7 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 			lockBaseDistance: 4.85,
 			wallpaperLyricLock: false,
 			wallpaperShelfLyrics: false,
+			skullLyricEdgeGuard: !!raw.skullLyricEdgeGuard,
 		};
 		const wallpaperLyricLock = layout.preset === 5 && layout.lyricCameraLock;
 		if (wallpaperLyricLock) {
@@ -474,7 +477,18 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 			}
 			return;
 		}
-		state.lockFitScale = 1;
+		if (layout.skullLyricEdgeGuard) {
+			const lockDistance = layout.lockBaseDistance + layout.lyricOffsetZ;
+			const edgeGuardCamera = opts.cameraSupplier?.() ?? null;
+			const lockFit = edgeGuardCamera
+				? lyricCameraLockFit(edgeGuardCamera, layout.lyricScale, layout.lyricOffsetX, layout.lyricOffsetY, lockDistance)
+				: 1;
+			state.lockFitScale += (lockFit - state.lockFitScale) * (lockFit < state.lockFitScale ? 0.18 : 0.10);
+			state.lockFitScale = finiteOr(state.lockFitScale, 1);
+			setGroupScale(group, layout.lyricScale * state.lockFitScale);
+		} else {
+			state.lockFitScale = 1;
+		}
 		const x = layout.lyricOffsetX;
 		const y = 0.2 + layout.lyricOffsetY;
 		const z = 1.46 + layout.lyricOffsetZ;

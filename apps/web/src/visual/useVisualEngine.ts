@@ -275,7 +275,10 @@ export function resolveHomeVisualPreset(
 	};
 }
 
-export function resolveStageLyricLayoutOptions(fx: Partial<FxState>) {
+export function resolveStageLyricLayoutOptions(
+	fx: Partial<FxState>,
+	orbitState: { orbitCenterLocked?: boolean; orbitRecentering?: boolean } = {},
+) {
 	return {
 		lyricCameraLock: !!fx.lyricCameraLock,
 		lyricScale: fx.lyricScale,
@@ -285,6 +288,7 @@ export function resolveStageLyricLayoutOptions(fx: Partial<FxState>) {
 		lyricTiltX: fx.lyricTiltX,
 		lyricTiltY: fx.lyricTiltY,
 		preset: fx.preset,
+		skullLyricEdgeGuard: Number(fx.preset) === 6 && !!(orbitState.orbitCenterLocked || orbitState.orbitRecentering),
 	};
 }
 
@@ -479,7 +483,10 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				},
 				lyricLayoutOptionsSupplier: () => {
 					const fx = mergeFxState(mergeFxState(cloneFxState(), refs.fxDefaults), refs.fxRef?.current);
-					return resolveStageLyricLayoutOptions(fx);
+					const orbit = cinema.getState().orbit;
+					return resolveStageLyricLayoutOptions(fx, {
+						orbitCenterLocked: orbit.centerLocked,
+					});
 				},
 				cameraSupplier: () => renderer.camera,
 				pixelScale: 1,

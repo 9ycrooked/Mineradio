@@ -660,6 +660,58 @@ test("update applies baseline non-wallpaper camera-lock shelf avoid layout", asy
 	lifecycle.dispose();
 });
 
+test("update applies baseline skull edge-guard lockFit without camera lock", async () => {
+	const scene = makeFakeScene();
+	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
+	const lifecycle = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		gsapProvider: () => makeFakeGsap([]),
+		customEaseProvider: async () => null,
+		lyricLinesSupplier: () => [] as never,
+		currentTimeSupplier: () => 0,
+		isPlayingSupplier: () => true,
+		audioDurationSupplier: () => 9999,
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0,
+		lyricGlowBeatFlagSupplier: () => false,
+		lyricSunEnergyHolder: { get: () => 0, set: () => {} },
+		lyricLayoutOptionsSupplier: () => ({
+			lyricCameraLock: false,
+			lyricScale: 1.65,
+			lyricOffsetX: 1.45,
+			lyricOffsetY: 0.9,
+			lyricOffsetZ: 0.3,
+			lyricTiltX: 0,
+			lyricTiltY: 0,
+			preset: 6,
+			skullLyricEdgeGuard: true,
+		} as never),
+		cameraSupplier: () => camera as never,
+		rand: () => 0.35,
+	});
+	await lifecycle.mount(scene as never);
+	lifecycle.update(makeCtx(0, 0.1));
+	const group = lifecycle.group as unknown as {
+		position: { x: number; y: number; z: number };
+		scale: { x: number; y: number; z: number };
+	};
+	const distance = 4.85 + 0.3;
+	const visibleH = 2 * Math.tan((45 * Math.PI / 180) * 0.5) * distance;
+	const visibleW = visibleH * (16 / 9);
+	const safeW = Math.max(visibleW * 0.42, visibleW * 0.84 - 1.45 * 1.22);
+	const safeH = Math.max(visibleH * 0.18, visibleH * 0.44 - 0.9 * 0.82);
+	const viewportFit = Math.min(1, safeW / (5.4 * 1.65), safeH / (0.78 * 1.65));
+	const lockFit = Math.max(0.42, Math.min(1, viewportFit, 0.80 / 1.65));
+	const firstFrameLockFitScale = 1 + (lockFit - 1) * 0.18;
+	expect(group.scale.x).toBeCloseTo(1.65 * firstFrameLockFitScale, 6);
+	expect(group.position.x).toBeCloseTo(1.45, 6);
+	expect(group.position.y).toBeCloseTo(0.2 + 0.9, 6);
+	expect(group.position.z).toBeCloseTo(1.46 + 0.3, 6);
+	lifecycle.dispose();
+});
+
 test("update applies baseline wallpaper camera-lock layout and distance when shelf dims wallpaper", async () => {
 	const scene = makeFakeScene();
 	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
