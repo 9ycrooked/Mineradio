@@ -25,6 +25,8 @@ import {
 	PodcastSearchResponseSchema,
 	PlaylistAddSongAck,
 	PlaylistAddSongAckSchema,
+	DiscoverHomeResponse,
+	DiscoverHomeResponseSchema,
 	ProviderId,
 	ProviderSessionCookieAck,
 	ProviderSessionCookieAckSchema,
@@ -244,6 +246,14 @@ export class SidecarClient {
 			"GET",
 			`/weather/radio${suffix}`,
 			WeatherRadioResponseSchema,
+		);
+	}
+
+	async discoverHome(): Promise<DiscoverHomeResponse> {
+		return this.request(
+			"GET",
+			"/discover/home",
+			DiscoverHomeResponseSchema,
 		);
 	}
 

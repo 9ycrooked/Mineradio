@@ -12,3 +12,4 @@ export * from "./desktop";
 export * from "./session";
 export * from "./weather";
 export * from "./podcast";
+export * from "./discover";

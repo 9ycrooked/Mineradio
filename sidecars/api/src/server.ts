@@ -15,6 +15,7 @@ import {
   SongLikeAckSchema,
   SongLikeCheckAckSchema,
   PlaylistAddSongAckSchema,
+  DiscoverHomeResponseSchema,
   type CapabilityMatrix,
   type ProviderId,
   type Track
@@ -48,6 +49,7 @@ import {
   podcastService,
   type PodcastService
 } from "./services/podcast";
+import { buildDiscoverHome, type DiscoverRequester } from "./services/discover-home";
 import {
   clearRuntimeProviderCookie,
   setRuntimeProviderCookie
@@ -60,7 +62,9 @@ export type RouteHandlerDeps = {
   providerAdapters?: Record<ProviderId, ProviderAdapter>;
   weatherRadio?: WeatherRadioService;
   podcast?: Partial<PodcastService>;
+  discoverRequester?: DiscoverRequester;
   logger?: SidecarLogger;
+  now?: () => number;
 };
 
 export function createRouteHandler(deps: RouteHandlerDeps = {}) {
@@ -126,6 +130,17 @@ export function createRouteHandler(deps: RouteHandlerDeps = {}) {
       const params = parseWeatherRadioParams(url);
       response = json(ok(WeatherRadioResponseSchema.parse(await weatherRadioService.build(params))));
       await logRequest(logger, { method, path, status: response.status, startedAt, action: "weather-radio" });
+      return response;
+    }
+
+    if (path === "/discover/home" && method === "GET") {
+      response = json(ok(DiscoverHomeResponseSchema.parse(await buildDiscoverHome({
+        providerAdapters,
+        podcast,
+        discoverRequester: deps.discoverRequester,
+        now: deps.now
+      }))));
+      await logRequest(logger, { method, path, status: response.status, startedAt, action: "discover-home" });
       return response;
     }
 

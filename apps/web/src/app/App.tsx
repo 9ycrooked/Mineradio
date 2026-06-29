@@ -6,6 +6,11 @@ import {
   type ReactElement,
 } from "react";
 import { SidecarClient, SidecarClientError } from "../api/sidecar-client";
+import {
+  LOCAL_AUDIO_ACCEPT,
+  createLocalAudioTrack,
+  firstLocalAudioFile,
+} from "../audio/local-audio-import";
 import { PlayerController } from "../audio/player-controller";
 import {
   deleteCustomLyricForTrack,
@@ -37,7 +42,6 @@ import {
   getRuntimeConfig,
   getSidecarStatus,
   getWindowState,
-  importJsonFile,
   listenWindowState,
   listenGlobalHotkey,
   minimizeWindow,
@@ -85,6 +89,7 @@ import {
 } from "../visual/shelf-detail-data";
 import {
   ensureLyricFallbackPayload,
+  type DiscoverHomeResponse,
   type PlaybackQuality,
   type PlaylistSummary,
   type PodcastCollection,
@@ -250,6 +255,7 @@ function trackLikeKey(track: Track | null | undefined): string {
 function isNeteaseLikeSupported(track: Track | null | undefined): track is Track {
   if (!track?.id) return false;
   const record = track as unknown as Record<string, unknown>;
+  if (track.id.startsWith("local:")) return false;
   if (record.type === "local" || record.source === "local") return false;
   if (record.type === "podcast" || record.source === "podcast") return false;
   return track.provider === "netease";
@@ -581,6 +587,8 @@ export function App({
   const [likeBusyMap, setLikeBusyMap] = useState<Record<string, boolean>>({});
   const [desktopWindowState, setDesktopWindowState] =
     useState<WindowState | null>(null);
+  const [homeDiscover, setHomeDiscover] =
+    useState<DiscoverHomeResponse | null>(null);
 
   const currentTrack = usePlaybackStore((s) => s.currentTrack);
   const queue = usePlaybackStore((s) => s.queue);
@@ -650,6 +658,8 @@ export function App({
   const cancelledRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const controllerRef = useRef<PlayerController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const localAudioUrlsRef = useRef(new Map<string, string>());
   const lastLoadedKeyRef = useRef<string>("");
   const playbackRequestSeqRef = useRef(0);
   const neteaseCookieInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -671,6 +681,7 @@ export function App({
   const likeBusyMapRef = useRef(likeBusyMap);
   likeBusyMapRef.current = likeBusyMap;
   const likeStatusRequestSeqRef = useRef(0);
+  const homeDiscoverRequestSeqRef = useRef(0);
 
   const positionRef = useRef(positionMs);
   positionRef.current = positionMs;
@@ -888,19 +899,31 @@ export function App({
     showToast,
   ]);
 
-  const importLocalJson = useCallback(async () => {
-    try {
-      const result = await importJsonFile();
-      if (result.cancelled) {
-        showToast("本地导入需要在 Tauri 窗口中选择文件");
-        return;
-      }
-      showToast(result.path ? `已读取 ${result.path}` : "已读取导入文件");
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "本地导入失败";
-      showToast(message);
+  const openLocalFileImport = useCallback(() => {
+    setHomeForcedOpen(false);
+    setHomeSuppressed(false);
+    fileInputRef.current?.click();
+  }, []);
+
+  const importLocalFiles = useCallback((files: FileList | File[] | null) => {
+    if (!files) return;
+    const file = firstLocalAudioFile(files);
+    if (!file) {
+      showToast("请选择音频文件");
+      return;
     }
-  }, [showToast]);
+    const url = URL.createObjectURL(file);
+    const track = createLocalAudioTrack(file);
+    const key = `${track.provider}:${track.id}`;
+    const previousUrl = localAudioUrlsRef.current.get(key);
+    if (previousUrl && previousUrl !== url) URL.revokeObjectURL(previousUrl);
+    localAudioUrlsRef.current.set(key, url);
+    usePlaybackStore.getState().setQueue([track]);
+    usePlaybackStore.getState().playAt(0);
+    enterPlaybackSurface();
+    setCurrentBeatMapState(null);
+    showToast(track.title);
+  }, [enterPlaybackSurface, showToast]);
 
   const refreshUpdateStatus = useCallback(
     async (manual = false) => {
@@ -1018,50 +1041,214 @@ export function App({
     void refreshProviderStatus("qq");
   }, [refreshProviderStatus]);
 
+  const refreshHomeDiscover = useCallback(async () => {
+    const client = sidecarClient;
+    if (!client) {
+      setHomeDiscover(null);
+      return null;
+    }
+    const seq = ++homeDiscoverRequestSeqRef.current;
+    try {
+      const next = await client.discoverHome();
+      if (seq === homeDiscoverRequestSeqRef.current) setHomeDiscover(next);
+      return next;
+    } catch {
+      const fallback: DiscoverHomeResponse = {
+        loggedIn: false,
+        user: null,
+        dailySongs: [],
+        playlists: [],
+        podcasts: [],
+        mode: "starter",
+        updatedAt: Date.now(),
+      };
+      if (seq === homeDiscoverRequestSeqRef.current) setHomeDiscover(fallback);
+      return fallback;
+    }
+  }, [sidecarClient]);
+
+  useEffect(() => {
+    if (!sidecarClient) {
+      setHomeDiscover(null);
+      return;
+    }
+    void refreshHomeDiscover();
+  }, [
+    neteaseStatus?.loggedIn,
+    qqStatus?.loggedIn,
+    refreshHomeDiscover,
+    sidecarClient,
+  ]);
+
   const openHomeLibrary = useCallback(() => {
-    if (neteaseStatus?.loggedIn || qqStatus?.loggedIn) {
-      searchQuery("我的歌单");
-      showToast("正在用账号歌单关键词打开搜索入口");
+    if (homeDiscover?.loggedIn || neteaseStatus?.loggedIn || qqStatus?.loggedIn) {
+      if (sidecarClient) void refreshShelfPlaylists(sidecarClient);
+      setShelfMode("side");
+      useShelfStore.getState().openShelf();
+      showToast("已打开歌单库");
       return;
     }
     openLoginModal();
     showToast("登录后同步歌单库");
   }, [
+    homeDiscover?.loggedIn,
     neteaseStatus?.loggedIn,
     openLoginModal,
     qqStatus?.loggedIn,
-    searchQuery,
+    refreshShelfPlaylists,
+    setShelfMode,
     showToast,
+    sidecarClient,
   ]);
 
-  const startWeatherRadio = useCallback(async () => {
-    const client = sidecarClient;
-    if (!client) {
-      searchQuery("雨天 R&B");
-      showToast("天气队列暂时为空，先打开搜索");
-      return;
-    }
-    showToast("正在生成天气电台");
-    try {
-      const result = await client.weatherRadio({
-        city: "上海",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "auto",
-      });
-      const songs = result.radio.songs;
-      if (!songs.length) {
-        searchQuery(result.radio.seedQueries[0] || "雨天 R&B");
-        showToast("天气队列暂时为空，先打开搜索");
+  const homeHasLogin = useCallback(
+    () => !!(homeDiscover?.loggedIn || neteaseStatus?.loggedIn || qqStatus?.loggedIn),
+    [homeDiscover?.loggedIn, neteaseStatus?.loggedIn, qqStatus?.loggedIn],
+  );
+
+  const playHomeDiscoverSongs = useCallback(
+    async (index: number) => {
+      const discover = homeDiscover?.loggedIn ? homeDiscover : await refreshHomeDiscover();
+      if (!homeHasLogin() && !discover?.loggedIn) {
+        openLoginModal();
+        showToast("登录后同步你的今日歌曲");
+        return;
+      }
+      const songs = discover?.dailySongs ?? [];
+      const targetIndex = Math.max(0, Math.min(index, songs.length - 1));
+      if (!songs.length || !songs[targetIndex]) {
+        searchQuery(index > 0 ? "私人雷达" : "每日推荐");
         return;
       }
       usePlaybackStore.getState().setQueue(songs);
-      usePlaybackStore.getState().playAt(0);
+      usePlaybackStore.getState().playAt(targetIndex);
       enterPlaybackSurface();
-      showToast(`${result.radio.title || "天气电台"} · ${songs.length} 首`);
-    } catch {
-      searchQuery("雨天 R&B");
-      showToast("天气队列暂时为空，先打开搜索");
+    },
+    [
+      enterPlaybackSurface,
+      homeDiscover,
+      homeHasLogin,
+      openLoginModal,
+      refreshHomeDiscover,
+      searchQuery,
+      showToast,
+    ],
+  );
+
+  const playHomeDaily = useCallback(() => {
+    void playHomeDiscoverSongs(0);
+  }, [playHomeDiscoverSongs]);
+
+  const openHomeDiscoverPlaylist = useCallback(
+    async (index: number) => {
+      const discover = homeDiscover?.loggedIn ? homeDiscover : await refreshHomeDiscover();
+      if (!homeHasLogin() && !discover?.loggedIn) {
+        searchQuery("");
+        return;
+      }
+      const item = discover?.playlists[index];
+      if (!item || !sidecarClient) {
+        openHomeLibrary();
+        return;
+      }
+      try {
+        const detail = await sidecarClient.playlistDetail(item.provider, item.id);
+        if (!detail.tracks.length) {
+          showToast("歌单暂时没有可播放歌曲");
+          return;
+        }
+        usePlaybackStore.getState().setQueue(detail.tracks);
+        usePlaybackStore.getState().playAt(0);
+        enterPlaybackSurface();
+        showToast(detail.name || item.name);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "歌单载入失败";
+        showToast(message);
+      }
+    },
+    [
+      enterPlaybackSurface,
+      homeDiscover,
+      homeHasLogin,
+      openHomeLibrary,
+      refreshHomeDiscover,
+      searchQuery,
+      showToast,
+      sidecarClient,
+    ],
+  );
+
+  const playHomePrivate = useCallback(async () => {
+    const discover = homeDiscover?.loggedIn ? homeDiscover : await refreshHomeDiscover();
+    if (!homeHasLogin() && !discover?.loggedIn) {
+      openLoginModal();
+      showToast("登录后同步更多歌曲");
+      return;
     }
-  }, [enterPlaybackSurface, searchQuery, showToast, sidecarClient]);
+    if (discover?.dailySongs.length) {
+      await playHomeDiscoverSongs(0);
+      return;
+    }
+    if (discover?.playlists.length) {
+      await openHomeDiscoverPlaylist(0);
+      return;
+    }
+    openHomeLibrary();
+  }, [
+    homeDiscover,
+    homeHasLogin,
+    openHomeDiscoverPlaylist,
+    openHomeLibrary,
+    openLoginModal,
+    playHomeDiscoverSongs,
+    refreshHomeDiscover,
+    showToast,
+  ]);
+
+  const openHomeDiscoverPodcast = useCallback(
+    async (index: number) => {
+      const discover = homeDiscover?.loggedIn ? homeDiscover : await refreshHomeDiscover();
+      const item = discover?.podcasts[index];
+      if (!item || !sidecarClient) {
+        searchQuery("播客");
+        return;
+      }
+      try {
+        const detail = await sidecarClient.podcastPrograms(item.id, 30, 0);
+        if (!detail.programs.length) {
+          searchQuery(item.name || "播客");
+          return;
+        }
+        usePlaybackStore.getState().setQueue(detail.programs);
+        usePlaybackStore.getState().playAt(0);
+        enterPlaybackSurface();
+        showToast(item.name || "播客");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "播客载入失败";
+        showToast(message);
+      }
+    },
+    [
+      enterPlaybackSurface,
+      homeDiscover,
+      refreshHomeDiscover,
+      searchQuery,
+      showToast,
+      sidecarClient,
+    ],
+  );
+
+  const openHomePodcastSearch = useCallback(() => {
+    searchQuery("播客");
+  }, [searchQuery]);
+
+  const openHomeInsight = useCallback(() => {
+    showToast("播放几首歌后会生成听歌画像");
+  }, [showToast]);
+
+  const playHomeRecent = useCallback(() => {
+    showToast("还没有听歌记录");
+  }, [showToast]);
 
   const openCollectPicker = useCallback(
     (track: Track) => {
@@ -1942,7 +2129,7 @@ export function App({
   useEffect(() => {
     const controller = controllerRef.current;
     const client = sidecarClient;
-    if (!controller || !client) return;
+    if (!controller) return;
     if (!currentTrack) {
       lastLoadedKeyRef.current = "";
       playbackRequestSeqRef.current += 1;
@@ -1953,6 +2140,8 @@ export function App({
       return;
     }
     const key = `${currentTrack.provider}:${currentTrack.id}`;
+    const localAudioUrl = localAudioUrlsRef.current.get(key);
+    if (!localAudioUrl && !client) return;
     if (key === lastLoadedKeyRef.current) return;
     lastLoadedKeyRef.current = key;
     const seq = playbackRequestSeqRef.current + 1;
@@ -1968,6 +2157,29 @@ export function App({
         usePlaybackStore.getState().durationMs ?? currentTrack.durationMs,
     });
     setLyricsPayload(resolvedFallbackLyric.payload);
+
+    if (localAudioUrl) {
+      void (async () => {
+        try {
+          controller.load(localAudioUrl);
+          if (positionRef.current > 0) controller.seek(positionRef.current);
+          await controller.play();
+          if (playbackRequestSeqRef.current !== seq) return;
+          setLyricsLoading(false);
+          setHomeForcedOpen(false);
+          setHomeSuppressed(true);
+        } catch (e) {
+          if (playbackRequestSeqRef.current !== seq) return;
+          const message = e instanceof Error ? e.message : "playback error";
+          setPlaying(false);
+          setSearchError(message);
+          showToast(message);
+        }
+      })();
+      return;
+    }
+
+    if (!client) return;
 
     void (async () => {
       try {
@@ -2076,6 +2288,18 @@ export function App({
 
   return (
     <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        id="file-input"
+        accept={LOCAL_AUDIO_ACCEPT}
+        multiple
+        style={{ display: "none" }}
+        onChange={(event) => {
+          importLocalFiles(event.currentTarget.files);
+          event.currentTarget.value = "";
+        }}
+      />
       {SHOW_SPLASH && splashActive && (
         <SplashComponent onDismissed={() => setSplashActive(false)} />
       )}
@@ -2162,21 +2386,30 @@ export function App({
         onStringSettingChange={updateVisualStringSetting}
       />
       <EmptyHomeHost
+        discover={homeDiscover}
         onSearchFocus={focusSearch}
         onOpenLibrary={openHomeLibrary}
         onOpenConsole={revealConsole}
         onSearchQuery={searchQuery}
-        onUpload={() => void importLocalJson()}
+        onUpload={openLocalFileImport}
         onGuide={() => {
           revealConsole();
           showToast("视觉引导已打开播放器控制台，播放后会进入粒子与歌词舞台");
         }}
-        onStartWeatherRadio={() => void startWeatherRadio()}
+        onOpenLogin={openLoginModal}
+        onPlayDaily={playHomeDaily}
+        onPlayPrivate={() => void playHomePrivate()}
+        onPlaySong={(index) => void playHomeDiscoverSongs(index)}
+        onOpenPlaylist={(index) => void openHomeDiscoverPlaylist(index)}
+        onOpenPodcast={(index) => void openHomeDiscoverPodcast(index)}
+        onOpenPodcastSearch={openHomePodcastSearch}
+        onOpenInsight={openHomeInsight}
+        onPlayRecent={playHomeRecent}
       />
       <SearchShell
         client={sidecarClient}
         onFocus={focusSearch}
-        onUpload={() => void importLocalJson()}
+        onUpload={openLocalFileImport}
         onResultPlay={enterPlaybackSurface}
         onResultLike={(track) => void toggleLikeTrack(track)}
         onResultCollect={openCollectPicker}

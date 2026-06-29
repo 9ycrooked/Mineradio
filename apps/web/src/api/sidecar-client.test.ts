@@ -201,6 +201,41 @@ test("weatherRadio calls sidecar weather radio endpoint with location params", a
 	});
 });
 
+test("discoverHome GETs the baseline Home discover endpoint", async () => {
+	const fake = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = typeof input === "string" ? input : input.toString();
+		expect(url).toContain("/discover/home");
+		expect(init?.method).toBe("GET");
+		return jsonResponse({
+			ok: true,
+			data: {
+				loggedIn: true,
+				mode: "member",
+				user: { provider: "netease", userId: "42", nickname: "tester", avatarUrl: "" },
+				dailySongs: [SAMPLE_TRACK],
+				playlists: [{
+					provider: "netease",
+					id: "p1",
+					name: "我的歌单",
+					coverUrl: "",
+					trackCount: 1,
+					trackIds: ["t1"],
+					subscribed: false,
+				}],
+				podcasts: [],
+				updatedAt: 1782656256000,
+			},
+		});
+	}) as typeof fetch;
+	await withFetch(fake, async () => {
+		const client = new SidecarClient(BASE);
+		const discover = await client.discoverHome();
+		expect(discover.mode).toBe("member");
+		expect(discover.dailySongs[0].id).toBe("t1");
+		expect(discover.playlists[0].name).toBe("我的歌单");
+	});
+});
+
 test("podcastSearch GETs baseline podcast search endpoint", async () => {
 	const fake = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input.toString();

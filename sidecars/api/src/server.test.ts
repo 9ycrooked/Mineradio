@@ -503,6 +503,304 @@ test("provider route redacts sensitive ProviderError messages while preserving e
   expect(serialized).not.toContain("secret");
 });
 
+test("GET /discover/home returns the logged-out starter envelope", async () => {
+  const handler = createRouteHandler({
+    providerAdapters: {
+      ...providers,
+      netease: {
+        ...providers.netease,
+        async loginStatus() {
+          return { provider: "netease", loggedIn: false };
+        }
+      },
+      qq: {
+        ...providers.qq,
+        async loginStatus() {
+          return { provider: "qq", loggedIn: false };
+        }
+      }
+    },
+    now: () => 1782656256000
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/discover/home"));
+  expect(r.status).toBe(200);
+  const b = await body(r);
+  expect(b).toEqual({
+    ok: true,
+    data: {
+      loggedIn: false,
+      user: null,
+      dailySongs: [],
+      playlists: [],
+      podcasts: [],
+      mode: "starter",
+      updatedAt: 1782656256000
+    }
+  });
+});
+
+test("GET /discover/home aggregates logged-in playlists, daily tracks, and podcasts", async () => {
+  const calls: string[] = [];
+  const handler = createRouteHandler({
+    providerAdapters: {
+      ...providers,
+      netease: {
+        ...providers.netease,
+        async loginStatus() {
+          calls.push("netease:login");
+          return { provider: "netease", loggedIn: true, nickname: "tester", userId: "42" };
+        },
+        async playlistList() {
+          calls.push("netease:list");
+          return [{
+            provider: "netease",
+            id: "p1",
+            name: "我的歌单",
+            coverUrl: "https://img.example/p.jpg",
+            trackCount: 2,
+            trackIds: ["1", "2"],
+            subscribed: false
+          }];
+        },
+        async playlistDetail(id) {
+          calls.push(`netease:detail:${id}`);
+          return {
+            provider: "netease",
+            id,
+            name: "我的歌单",
+            coverUrl: "https://img.example/p.jpg",
+            trackCount: 2,
+            trackIds: ["1", "2"],
+            subscribed: false,
+            tracks: [{ ...routeTrack, title: "今日歌曲" }]
+          };
+        }
+      },
+      qq: {
+        ...providers.qq,
+        async loginStatus() {
+          calls.push("qq:login");
+          return { provider: "qq", loggedIn: false };
+        }
+      }
+    },
+    podcast: {
+      async hot() {
+        calls.push("podcast:hot");
+        return {
+          podcasts: [{
+            id: "r1",
+            rid: "r1",
+            name: "热门播客",
+            coverUrl: "",
+            description: "",
+            djName: "DJ",
+            category: "音乐",
+            programCount: 5,
+            subCount: 0
+          }],
+          more: false
+        };
+      }
+    },
+    now: () => 1782656256000
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/discover/home"));
+  expect(r.status).toBe(200);
+  const b = await body(r);
+  expect(b.ok).toBe(true);
+  expect(b.data.loggedIn).toBe(true);
+  expect(b.data.mode).toBe("member");
+  expect(b.data.user).toEqual({ provider: "netease", userId: "42", nickname: "tester", avatarUrl: "" });
+  expect(b.data.dailySongs[0].title).toBe("今日歌曲");
+  expect(b.data.playlists[0].name).toBe("我的歌单");
+  expect(b.data.podcasts[0].name).toBe("热门播客");
+  expect(calls).toContain("netease:detail:p1");
+});
+
+test("GET /discover/home uses the baseline Netease recommendation sources", async () => {
+  const calls: string[] = [];
+  const handler = createRouteHandler({
+    providerAdapters: {
+      ...providers,
+      netease: {
+        ...providers.netease,
+        async loginStatus() {
+          return { provider: "netease", loggedIn: true, nickname: "tester", userId: "42" };
+        },
+        async playlistList() {
+          calls.push("adapter:list");
+          return [];
+        },
+        async search() {
+          calls.push("adapter:search");
+          return [];
+        }
+      },
+      qq: {
+        ...providers.qq,
+        async loginStatus() {
+          return { provider: "qq", loggedIn: false };
+        }
+      }
+    },
+    discoverRequester: {
+      async personalized() {
+        calls.push("personalized");
+        return {
+          body: {
+            result: [{
+              id: 7001,
+              name: "公开推荐歌单",
+              picUrl: "https://img.example/public.jpg",
+              trackCount: 24,
+              playCount: 1024,
+              creator: { nickname: "DJ" }
+            }]
+          }
+        };
+      },
+      async djHot() {
+        calls.push("dj_hot");
+        return {
+          body: {
+            djRadios: [{
+              id: 8001,
+              name: "热门播客",
+              picUrl: "https://img.example/radio.jpg",
+              dj: { nickname: "主播" },
+              category: "音乐",
+              programCount: 12,
+              subCount: 9
+            }]
+          }
+        };
+      },
+      async recommendResource() {
+        calls.push("recommend_resource");
+        return {
+          body: {
+            recommend: [{
+              id: 7002,
+              name: "私人推荐歌单",
+              coverImgUrl: "https://img.example/private.jpg",
+              trackCount: 8
+            }]
+          }
+        };
+      },
+      async recommendSongs() {
+        calls.push("recommend_songs");
+        return {
+          body: {
+            data: {
+              dailySongs: [{
+                id: 9001,
+                name: "今日推荐歌曲",
+                ar: [{ id: 1, name: "Alice" }],
+                al: { name: "专辑", picUrl: "https://img.example/song.jpg" },
+                dt: 210000,
+                fee: 0
+              }]
+            }
+          }
+        };
+      }
+    },
+    now: () => 1782656256000
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/discover/home"));
+  expect(r.status).toBe(200);
+  const b = await body(r);
+  expect(b.data.dailySongs[0]).toMatchObject({
+    provider: "netease",
+    id: "9001",
+    title: "今日推荐歌曲",
+    artists: ["Alice"],
+    album: "专辑",
+    coverUrl: "https://img.example/song.jpg",
+    durationMs: 210000
+  });
+  expect(b.data.playlists.map((playlist: { name: string }) => playlist.name)).toEqual([
+    "私人推荐歌单",
+    "公开推荐歌单"
+  ]);
+  expect(b.data.podcasts[0]).toMatchObject({
+    id: "8001",
+    rid: "8001",
+    name: "热门播客",
+    coverUrl: "https://img.example/radio.jpg",
+    djName: "主播"
+  });
+  expect(calls).toEqual([
+    "personalized",
+    "dj_hot",
+    "recommend_resource",
+    "recommend_songs"
+  ]);
+});
+
+test("GET /discover/home falls back to provider search when playlist detail has no daily tracks", async () => {
+  const handler = createRouteHandler({
+    providerAdapters: {
+      ...providers,
+      netease: {
+        ...providers.netease,
+        async loginStatus() {
+          return { provider: "netease", loggedIn: true, nickname: "tester", userId: "42" };
+        },
+        async playlistList() {
+          return [{
+            provider: "netease",
+            id: "p1",
+            name: "空歌单",
+            coverUrl: "",
+            trackCount: 0,
+            trackIds: [],
+            subscribed: false
+          }];
+        },
+        async playlistDetail(id) {
+          return {
+            provider: "netease",
+            id,
+            name: "空歌单",
+            coverUrl: "",
+            trackCount: 0,
+            trackIds: [],
+            subscribed: false,
+            tracks: []
+          };
+        },
+        async search(query) {
+          expect(query).toEqual({ keyword: "每日推荐", limit: 12 });
+          return [{ ...routeTrack, title: "搜索补位日推" }];
+        }
+      },
+      qq: {
+        ...providers.qq,
+        async loginStatus() {
+          return { provider: "qq", loggedIn: false };
+        }
+      }
+    },
+    podcast: {
+      async hot() {
+        return { podcasts: [], more: false };
+      }
+    },
+    now: () => 1782656256000
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/discover/home"));
+  expect(r.status).toBe(200);
+  const b = await body(r);
+  expect(b.data.dailySongs[0].title).toBe("搜索补位日推");
+});
+
 test("provider route does not serialize extra ProviderError restriction fields", async () => {
   const fakeQq: ProviderAdapter = {
     ...providers.qq,
