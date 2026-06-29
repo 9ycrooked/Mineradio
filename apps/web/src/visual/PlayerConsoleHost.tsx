@@ -8,6 +8,7 @@ import {
 import type { PlaybackMode } from "../stores/playback-store";
 import type { ShelfCameraMode, ShelfMode, ShelfPresence } from "../stores/shelf-store";
 import type { PlaybackQuality, Track } from "@mineradio/shared";
+import { createProgressDragParticleEmitter, type ProgressDragParticleEmitter } from "./progress-drag-particles";
 
 const PLAYBACK_QUALITY_OPTIONS: Array<{
 	value: PlaybackQuality;
@@ -93,6 +94,7 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 	const normalBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 	const motionRef = useRef<ControlConsoleMotion | null>(null);
 	const visibleRef = useRef(!!props.visible);
+	const progressParticleEmitterRef = useRef<ProgressDragParticleEmitter | null>(null);
 
 	visibleRef.current = !!props.visible;
 	const onMinimizeRef = useRef(props.onMinimize);
@@ -242,6 +244,14 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 	}, []);
 
 	useEffect(() => {
+		progressParticleEmitterRef.current = createProgressDragParticleEmitter();
+		return () => {
+			progressParticleEmitterRef.current?.dispose();
+			progressParticleEmitterRef.current = null;
+		};
+	}, []);
+
+	useEffect(() => {
 		const bar = barRef.current;
 		if (!bar) return;
 		bar.classList.toggle("visible", !!props.visible);
@@ -306,15 +316,21 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 		const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
 		onSeekRef.current?.(Math.floor(durationMs * ratio));
 	}, [durationMs]);
+	const emitProgressDragParticles = useCallback((clientX: number, target: HTMLDivElement) => {
+		const rect = target.getBoundingClientRect();
+		progressParticleEmitterRef.current?.emit(clientX, rect.top + rect.height / 2);
+	}, []);
 	const seekStub = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
 		event.currentTarget.setPointerCapture?.(event.pointerId);
 		setProgressDragging(true);
 		seekFromPointer(event.clientX, event.currentTarget);
-	}, [seekFromPointer]);
+		emitProgressDragParticles(event.clientX, event.currentTarget);
+	}, [emitProgressDragParticles, seekFromPointer]);
 	const seekMoveStub = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
 		if (!progressDragging) return;
 		seekFromPointer(event.clientX, event.currentTarget);
-	}, [progressDragging, seekFromPointer]);
+		emitProgressDragParticles(event.clientX, event.currentTarget);
+	}, [emitProgressDragParticles, progressDragging, seekFromPointer]);
 	const seekEndStub = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
 		setProgressDragging(false);
 		event.currentTarget.releasePointerCapture?.(event.pointerId);
