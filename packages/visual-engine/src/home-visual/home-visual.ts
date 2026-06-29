@@ -20,7 +20,9 @@ import {
 import { createHomeRipples, type HomeRipples } from "./ripples";
 import { deriveLyricPaletteFromCover, type CoverCanvasLike } from "./cover-colors";
 import type { LyricPalette } from "../stage-lyrics/palette";
+import type { SkullMouthTransform } from "../stage-lyrics/lifecycle";
 import { createBackCoverLayer, type BackCoverLayer } from "./back-cover-layer";
+import { createSkullParticleController, type SkullParticleController } from "./skull-particles";
 
 export interface HomeVisualOptions {
 	scene: THREE.Scene;
@@ -32,6 +34,8 @@ export interface HomeVisualOptions {
 	buildCoverEdgeDepth?: (image: HomeCoverImage) => HomeCoverImage | null;
 	onCoverLyricPalette?: (palette: LyricPalette) => void;
 	backCoverRandom?: () => number;
+	skullAssetData?: Float32Array | null;
+	loadSkullAsset?: () => Promise<Float32Array | null>;
 }
 
 export interface HomeVisual {
@@ -44,7 +48,35 @@ export interface HomeVisual {
 	setCoverUrl(url: string | null | undefined): void;
 	getCoverController(): HomeCoverTextureController;
 	getRipples(): HomeRipples;
+	getSkullParticles(): THREE.Points | null;
+	getSkullMouthTransform(): SkullMouthTransform | null;
 	whenIdle(): Promise<void>;
+}
+
+let skullAssetCache: Float32Array | null | undefined;
+
+async function defaultLoadSkullAssetData(): Promise<Float32Array | null> {
+	if (skullAssetCache !== undefined) return skullAssetCache;
+	if (
+		typeof window === "undefined" ||
+		typeof fetch !== "function" ||
+		!window.location ||
+		window.location.href.startsWith("about:")
+	) {
+		skullAssetCache = null;
+		return skullAssetCache;
+	}
+	try {
+		const url = new URL("assets/skull-decimation-points.bin?v=regular-surface-teeth-soften-20260621", window.location.href);
+		const res = await fetch(url, { cache: "reload" });
+		if (!res.ok) throw new Error("skull asset unavailable");
+		const buf = await res.arrayBuffer();
+		skullAssetCache = buf.byteLength >= 20 && buf.byteLength % 20 === 0 ? new Float32Array(buf) : null;
+		return skullAssetCache;
+	} catch {
+		skullAssetCache = null;
+		return skullAssetCache;
+	}
 }
 
 export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVisual> {
@@ -54,6 +86,15 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		coverResolution: opts.coverResolution ?? fx.coverResolution,
 	};
 	const field = await createHomeParticleField(opts.scene, fieldOpts);
+	const skullAssetData = opts.skullAssetData !== undefined
+		? opts.skullAssetData
+		: await (opts.loadSkullAsset ?? defaultLoadSkullAssetData)();
+	const skullParticles: SkullParticleController = await createSkullParticleController({
+		scene: opts.scene,
+		threeFactory: opts.threeFactory,
+		uniforms: field.materialUniforms,
+		assetData: skullAssetData,
+	});
 	const coverController = createHomeCoverTextureController({
 		uniforms: field.materialUniforms as never,
 		loadImage: opts.loadCoverImage,
@@ -130,12 +171,14 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		}
 		coverController.advanceColorMix(ctx.dt);
 		coverController.advanceDepth(ctx.dt);
+		skullParticles.update(ctx, fx);
 	}
 
 	return {
 		update: stepBody,
 		dispose() {
 			backCoverLayer?.dispose();
+			skullParticles.dispose();
 			field.dispose();
 		},
 		getPreset() {
@@ -162,6 +205,12 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		},
 		getRipples() {
 			return ripples;
+		},
+		getSkullParticles() {
+			return skullParticles.getObject();
+		},
+		getSkullMouthTransform() {
+			return skullParticles.getMouthTransform();
 		},
 		whenIdle() {
 			return backCoverPending ?? Promise.resolve();

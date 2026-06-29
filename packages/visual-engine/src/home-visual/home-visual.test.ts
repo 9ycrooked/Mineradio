@@ -8,7 +8,28 @@ import { SKULL_PRESET_INDEX } from "./preset-state";
 
 function makeFakeThree(): ThreeFactory {
 	const Points = function (geo: unknown, mat: unknown) {
-		return { isPoints: true, geometry: geo, material: mat, frustumCulled: true, renderOrder: 0, visible: true };
+		return {
+			isPoints: true,
+			geometry: geo,
+			material: mat,
+			frustumCulled: true,
+			renderOrder: 0,
+			visible: true,
+			userData: {} as Record<string, unknown>,
+			position: {
+				x: 0, y: 0, z: 0,
+				set(this: { x: number; y: number; z: number }, x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z; },
+			},
+			scale: {
+				x: 1, y: 1, z: 1,
+				setScalar(this: { x: number; y: number; z: number }, s: number) { this.x = s; this.y = s; this.z = s; },
+			},
+			rotation: {
+				x: 0, y: 0, z: 0,
+				set(this: { x: number; y: number; z: number }, x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z; },
+			},
+			updateMatrixWorld() {},
+		};
 	} as never;
 	const ShaderMaterial = function (params: Record<string, unknown>) {
 		return {
@@ -318,6 +339,82 @@ test("preset 6 (skull) suppresses points visibility; non-skull leaves points vis
 	hv.setPreset(SKULL_PRESET_INDEX);
 	hv.update(makeFrameCtx() as unknown as FrameContext);
 	expect((hv.getField().points as { visible: boolean }).visible).toBe(false);
+});
+
+test("HomeVisual mounts baseline skull particle layer from asset data for preset 6", async () => {
+	const scene = makeFakeScene();
+	const skullAssetData = new Float32Array([
+		0.025, -0.72, 0.62, 1.0, 42,
+		0.2, 0.3, 0.4, 0.25, 99,
+	]);
+	const hv = await createHomeVisual({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		skullAssetData,
+	} as never);
+	hv.setPreset(SKULL_PRESET_INDEX);
+	hv.update(makeFrameCtx({ bass: 0.8, mid: 0.4, beatPulse: 0.9 }, { uTime: { value: 1.2 } }) as unknown as FrameContext);
+	const skull = (hv as unknown as { getSkullParticles(): unknown }).getSkullParticles() as {
+		isPoints: boolean;
+		visible: boolean;
+		renderOrder: number;
+		frustumCulled: boolean;
+		userData: Record<string, unknown>;
+		geometry: { attributes: Record<string, { array: Float32Array; itemSize: number; count: number }> };
+		material: { uniforms: Record<string, { value: unknown }>; transparent: boolean; depthWrite: boolean; depthTest: boolean; blending: number };
+		position: { x: number; y: number; z: number };
+		scale: { x: number; y: number; z: number };
+		rotation: { x: number; y: number; z: number };
+	};
+	expect(skull.isPoints).toBe(true);
+	expect(skull.renderOrder).toBe(32);
+	expect(skull.frustumCulled).toBe(false);
+	expect(skull.userData.source).toBe("asset");
+	expect(skull.geometry.attributes.position.count).toBe(2);
+	expect(Array.from(skull.geometry.attributes.position.array.slice(0, 6))).toEqual([
+		expect.closeTo(0.025, 6),
+		expect.closeTo(-0.72, 6),
+		expect.closeTo(0.62, 6),
+		expect.closeTo(0.2, 6),
+		expect.closeTo(0.3, 6),
+		expect.closeTo(0.4, 6),
+	]);
+	expect(Array.from(skull.geometry.attributes.kind.array)).toEqual([expect.closeTo(1, 6), expect.closeTo(0.25, 6)]);
+	expect(Array.from(skull.geometry.attributes.seed.array)).toEqual([expect.closeTo(42, 6), expect.closeTo(99, 6)]);
+	expect(skull.material.transparent).toBe(true);
+	expect(skull.material.depthWrite).toBe(false);
+	expect(skull.material.depthTest).toBe(true);
+	expect(skull.material.blending).toBe(1);
+	expect(skull.visible).toBe(true);
+	expect(skull.material.uniforms.uOpacity.value as number).toBeGreaterThan(0);
+	expect(skull.material.uniforms.uJawOpen.value as number).toBeGreaterThan(0);
+	expect(skull.material.uniforms.uSkullFlash.value as number).toBeGreaterThan(0);
+	expect(skull.position.x).toBeCloseTo(0, 1);
+	expect(skull.position.y).toBeGreaterThan(0.18);
+	expect(skull.position.z).toBeCloseTo(0.10, 1);
+	expect(skull.scale.x).toBeGreaterThan(2.34);
+	expect(skull.scale.y).toBe(skull.scale.x);
+	expect(skull.scale.z).toBe(skull.scale.x);
+	expect(skull.rotation.x).toBeCloseTo(-0.26, 1);
+});
+
+test("HomeVisual exposes skull mouth world transform for stage lyrics", async () => {
+	const scene = makeFakeScene();
+	const hv = await createHomeVisual({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		skullAssetData: new Float32Array([0.025, -0.72, 0.62, 1, 42]),
+	} as never);
+	expect((hv as unknown as { getSkullMouthTransform(): unknown }).getSkullMouthTransform()).toBe(null);
+	hv.setPreset(SKULL_PRESET_INDEX);
+	hv.update({ ...makeFrameCtx({}, { uTime: { value: 0 } }), dt: 0 } as unknown as FrameContext);
+	const mouth = (hv as unknown as { getSkullMouthTransform(): { visible: boolean; position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } } | null }).getSkullMouthTransform();
+	expect(mouth?.visible).toBe(true);
+	expect(mouth?.position.x).toBeCloseTo(0.025 * 2.34, 3);
+	expect(mouth?.position.y).toBeLessThan(0.22);
+	expect(mouth?.position.z).toBeGreaterThan(0.10);
+	expect(mouth?.quaternion.x).toBeCloseTo(Math.sin(-0.26 / 2), 3);
+	expect(mouth?.quaternion.w).toBeCloseTo(Math.cos(-0.26 / 2), 3);
 });
 
 test("bloom gate: when fx.bloom=false, bloomPoints.visible=false; when fx.bloom=true && bloomStrength>0.01, bloomPoints.visible=true (unless skull)", async () => {

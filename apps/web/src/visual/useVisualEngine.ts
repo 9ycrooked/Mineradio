@@ -489,6 +489,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 						orbitCenterLocked: orbit.centerLocked,
 					});
 				},
+				skullMouthTransformSupplier: () => homeVisual.getSkullMouthTransform(),
 				cameraSupplier: () => renderer.camera,
 				pixelScale: 1,
 				reduceMotion: prefersReducedMotion,

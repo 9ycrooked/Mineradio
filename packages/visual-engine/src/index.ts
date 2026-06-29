@@ -226,6 +226,16 @@ export {
 } from "./home-visual/home-visual-shaders";
 export { createHomeVisual } from "./home-visual/home-visual";
 export type { HomeVisual, HomeVisualOptions } from "./home-visual/home-visual";
+export {
+	createSkullParticleController,
+	SKULL_LYRIC_MOUTH_LOCAL,
+	SKULL_MODEL_BASE_POSITION,
+	SKULL_MODEL_BASE_ROTATION_X,
+	SKULL_MODEL_BASE_ROTATION_Y,
+	SKULL_MODEL_SCALE,
+	skullBreathOffset,
+} from "./home-visual/skull-particles";
+export type { SkullParticleController, SkullParticleControllerOptions } from "./home-visual/skull-particles";
 
 export { createLyricParticles, LYRIC_PARTICLE_COUNT } from "./particles/lyric-particles";
 export type { LyricParticles, LyricParticlesOptions } from "./particles/lyric-particles";
