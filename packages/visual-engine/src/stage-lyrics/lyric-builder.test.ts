@@ -322,6 +322,7 @@ test("disposeLyricGroup-removes children + disposes geometries/materials/per-gro
 	expect(sparks.geometry.disposed).toBe(true);
 	expect(sparks.material.disposed).toBe(true);
 	if (maskTexture) expect(maskTexture.disposed).toBe(true);
+	if (sunMesh.material.map) expect(sunMesh.material.map.disposed).toBe(true);
 	if (glowMesh.material.map) expect(glowMesh.material.map.disposed).toBe(true);
 	if (readabilityMesh.material.map) expect(readabilityMesh.material.map.disposed).toBe(true);
 	expect((lyric.group as unknown as { children: unknown[] }).children.length).toBe(0);

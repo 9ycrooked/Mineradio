@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isRuntimeShelfPreviewActive, resolveHomeVisualPreset, resolveSkullShelfCompositionActive, resolveStageLyricLayoutOptions, setRuntimeShelfMode } from "./useVisualEngine";
+import { createStageLyricsShelfSuppliers, isRuntimeShelfPreviewActive, resolveHomeVisualPreset, resolveSkullShelfCompositionActive, resolveStageLyricLayoutOptions, shouldDimWallpaperParticlesForShelf, setRuntimeShelfMode } from "./useVisualEngine";
 
 test("isRuntimeShelfPreviewActive follows side-auto shelf visibility readiness", () => {
 	expect(isRuntimeShelfPreviewActive("auto", 0.17)).toBe(true);
@@ -42,6 +42,41 @@ test("resolveSkullShelfCompositionActive follows baseline side shelf composition
 		preset: 5,
 		shelfMode: "side",
 		shelfVisibility: 1,
+		pinnedOpen: true,
+		hasOpenContent: true,
+	})).toBe(false);
+});
+
+test("shouldDimWallpaperParticlesForShelf follows baseline wallpaper side pinned/detail formula", () => {
+	expect(shouldDimWallpaperParticlesForShelf({
+		preset: 5,
+		shelfMode: "side",
+		pinnedOpen: true,
+		hasOpenContent: false,
+	})).toBe(true);
+	expect(shouldDimWallpaperParticlesForShelf({
+		preset: 5,
+		shelfMode: "side",
+		pinnedOpen: false,
+		hasOpenContent: true,
+	})).toBe(true);
+	expect(shouldDimWallpaperParticlesForShelf({
+		preset: 5,
+		shelfMode: "side",
+		pinnedOpen: false,
+		hasOpenContent: false,
+		shelfVisibility: 1,
+		hoverCueValue: 1,
+	})).toBe(false);
+	expect(shouldDimWallpaperParticlesForShelf({
+		preset: 6,
+		shelfMode: "side",
+		pinnedOpen: true,
+		hasOpenContent: true,
+	})).toBe(false);
+	expect(shouldDimWallpaperParticlesForShelf({
+		preset: 5,
+		shelfMode: "stage",
 		pinnedOpen: true,
 		hasOpenContent: true,
 	})).toBe(false);
@@ -134,4 +169,46 @@ test("resolveStageLyricLayoutOptions enables skull edge guard while skull orbit 
 		orbitCenterLocked: true,
 	});
 	expect(layout.skullLyricEdgeGuard).toBe(true);
+});
+
+test("createStageLyricsShelfSuppliers exposes baseline shelf state to lyric lifecycle", () => {
+	const shelfManager = {
+		getShelfVisibility: () => 0.29,
+		getMode: () => "side" as const,
+		hasOpenContent: () => false,
+		getShelfPinnedOpen: () => true,
+		getShelfHoverCueValue: () => 0.31,
+	};
+	const suppliers = createStageLyricsShelfSuppliers({
+		shelfManager,
+		shelfModeRef: { current: "side" },
+		shelfPresenceRef: { current: "always" },
+		fxDefaults: { preset: 6 },
+	});
+
+	expect(suppliers.getShelfVisibility()).toBe(0.29);
+	expect(suppliers.getShelfMode()).toBe("side");
+	expect(suppliers.getShelfHasOpenContent()).toBe(false);
+	expect(suppliers.getShelfPinnedOpen()).toBe(true);
+	expect(suppliers.getShelfAlwaysVisible()).toBe(true);
+	expect(suppliers.getShelfHoverCueValue()).toBe(0.31);
+	expect(suppliers.getSkullShelfOpen()).toBe(true);
+});
+
+test("createStageLyricsShelfSuppliers resolves skull shelf state from runtime fx ref", () => {
+	const shelfManager = {
+		getShelfVisibility: () => 0.19,
+		getMode: () => "side" as const,
+		hasOpenContent: () => false,
+		getShelfPinnedOpen: () => false,
+		getShelfHoverCueValue: () => 0,
+	};
+	const suppliers = createStageLyricsShelfSuppliers({
+		shelfManager,
+		shelfModeRef: { current: "side" },
+		fxDefaults: { preset: 0 },
+		fxRef: { current: { preset: 6 } },
+	});
+
+	expect(suppliers.getSkullShelfOpen()).toBe(true);
 });

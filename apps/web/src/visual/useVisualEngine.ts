@@ -162,6 +162,38 @@ export function createStageLyricsHostSuppliers(input: StageLyricsHostSupplierRef
 	};
 }
 
+export interface StageLyricsShelfSupplierInput {
+	shelfManager: Pick<ShelfManager, "getShelfVisibility" | "getMode" | "hasOpenContent" | "getShelfPinnedOpen" | "getShelfHoverCueValue">;
+	shelfModeRef?: RefObject<string>;
+	shelfPresenceRef?: RefObject<string>;
+	fxDefaults?: Partial<FxState>;
+	fxRef?: RefObject<Partial<FxState> | undefined>;
+}
+
+export function createStageLyricsShelfSuppliers(input: StageLyricsShelfSupplierInput): Required<Pick<
+	StageLyricsLifecycleOpts,
+	"getShelfVisibility" | "getShelfMode" | "getShelfHasOpenContent" | "getShelfPinnedOpen" | "getShelfAlwaysVisible" | "getShelfHoverCueValue" | "getSkullShelfOpen"
+>> {
+	const readFx = (): FxState => mergeFxState(mergeFxState(cloneFxState(), input.fxDefaults), input.fxRef?.current);
+	const getShelfMode = () => input.shelfModeRef?.current ?? input.fxDefaults?.shelf ?? input.shelfManager.getMode();
+	const getShelfPresence = () => input.shelfPresenceRef?.current ?? input.fxDefaults?.shelfPresence ?? "always";
+	return {
+		getShelfVisibility: () => input.shelfManager.getShelfVisibility(),
+		getShelfMode,
+		getShelfHasOpenContent: () => input.shelfManager.hasOpenContent(),
+		getShelfPinnedOpen: () => input.shelfManager.getShelfPinnedOpen(),
+		getShelfAlwaysVisible: () => getShelfPresence() === "always",
+		getShelfHoverCueValue: () => input.shelfManager.getShelfHoverCueValue(),
+		getSkullShelfOpen: () => resolveSkullShelfCompositionActive({
+			preset: readFx().preset,
+			shelfMode: getShelfMode(),
+			shelfVisibility: input.shelfManager.getShelfVisibility(),
+			pinnedOpen: input.shelfManager.getShelfPinnedOpen(),
+			hasOpenContent: input.shelfManager.hasOpenContent(),
+		}),
+	};
+}
+
 async function initAudioSource(el: HTMLAudioElement | null): Promise<AudioFrameSource> {
 	if (typeof window === "undefined") return makeFallbackFrameSource();
 	const AudioCtor =
@@ -291,6 +323,21 @@ export function resolveSkullShelfCompositionActive(input: SkullShelfCompositionI
 	if (Number(input.preset) !== 6) return false;
 	if (input.shelfMode !== "side") return false;
 	return input.pinnedOpen || input.shelfVisibility > 0.18 || input.hasOpenContent;
+}
+
+export interface WallpaperShelfDimInput {
+	preset: number | null | undefined;
+	shelfMode: string | null | undefined;
+	pinnedOpen: boolean;
+	hasOpenContent: boolean;
+	shelfVisibility?: number;
+	hoverCueValue?: number;
+}
+
+export function shouldDimWallpaperParticlesForShelf(input: WallpaperShelfDimInput): boolean {
+	if (Number(input.preset) !== 5) return false;
+	if (input.shelfMode !== "side") return false;
+	return input.pinnedOpen || input.hasOpenContent;
 }
 
 export function setRuntimeShelfMode(
@@ -546,9 +593,13 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				isPlayingSupplier: () => refs.isPlayingRef.current,
 				lyricLinesSupplier: () => refs.lyricLinesRef.current,
 				...createStageLyricsHostSuppliers(refs),
-				getShelfVisibility: () => shelfManager.getShelfVisibility(),
-				getShelfMode: () => refs.shelfModeRef?.current ?? refs.fxDefaults?.shelf ?? "side",
-				getShelfHasOpenContent: () => shelfManager.hasOpenContent(),
+				...createStageLyricsShelfSuppliers({
+					shelfManager,
+					shelfModeRef: refs.shelfModeRef,
+					shelfPresenceRef: refs.shelfPresenceRef,
+					fxDefaults: refs.fxDefaults,
+					fxRef: refs.fxRef,
+				}),
 				lyricTextOptionsSupplier: () => {
 					const fx = mergeFxState(mergeFxState(cloneFxState(), refs.fxDefaults), refs.fxRef?.current);
 					return {
@@ -664,6 +715,12 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 					preset: homeVisual.getFx().preset,
 					shelfMode: shelfManager.getMode(),
 					shelfVisibility: shelfManager.getShelfVisibility(),
+					pinnedOpen: shelfManager.getShelfPinnedOpen(),
+					hasOpenContent: shelfManager.hasOpenContent(),
+				}));
+				homeVisual.setWallpaperShelfDimActive(shouldDimWallpaperParticlesForShelf({
+					preset: homeVisual.getFx().preset,
+					shelfMode: shelfManager.getMode(),
 					pinnedOpen: shelfManager.getShelfPinnedOpen(),
 					hasOpenContent: shelfManager.hasOpenContent(),
 				}));

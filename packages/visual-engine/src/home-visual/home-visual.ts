@@ -56,6 +56,7 @@ export interface HomeVisual {
 	getSkullMouthTransform(): SkullMouthTransform | null;
 	getSkullBeatFlash(): number;
 	setSkullShelfCompositionActive(active: boolean): void;
+	setWallpaperShelfDimActive(active: boolean): void;
 	whenIdle(): Promise<void>;
 }
 
@@ -125,6 +126,7 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		},
 	});
 	const ripples = createHomeRipples(field.materialUniforms as never);
+	let wallpaperShelfDimActive = false;
 	let backCoverLayer: BackCoverLayer | null = null;
 	let backCoverPending: Promise<void> | null = null;
 	let latestPreparedCover: HomeCoverImage | null = null;
@@ -166,8 +168,8 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		field.bloomPoints.visible = bloomAllowed;
 		syncBackCoverLayer();
 
-		syncFxUniforms(fx, ctx.snapshot, ctx.uniforms as unknown as UniformContainer, { dt: ctx.dt });
-		syncFxUniforms(fx, ctx.snapshot, field.materialUniforms as unknown as UniformContainer, { dt: ctx.dt });
+		syncFxUniforms(fx, ctx.snapshot, ctx.uniforms as unknown as UniformContainer, { dt: ctx.dt, wallpaperShelfDim: wallpaperShelfDimActive });
+		syncFxUniforms(fx, ctx.snapshot, field.materialUniforms as unknown as UniformContainer, { dt: ctx.dt, wallpaperShelfDim: wallpaperShelfDimActive });
 
 		const tU = field.materialUniforms.uTime as { value: unknown } | undefined;
 		if (tU && typeof ctx.uniforms.uTime.value === "number") tU.value = ctx.uniforms.uTime.value;
@@ -227,6 +229,9 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		},
 		setSkullShelfCompositionActive(active) {
 			skullParticles.setShelfCompositionActive(active);
+		},
+		setWallpaperShelfDimActive(active) {
+			wallpaperShelfDimActive = !!active;
 		},
 		whenIdle() {
 			return backCoverPending ?? Promise.resolve();

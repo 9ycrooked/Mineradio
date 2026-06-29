@@ -5,6 +5,7 @@ import { SKULL_PRESET_INDEX } from "./preset-state";
 export interface SyncUniformsOpts {
 	lerpK?: number;
 	dt?: number;
+	wallpaperShelfDim?: boolean;
 }
 
 export interface UniformSlot {
@@ -91,7 +92,7 @@ export function syncFxUniforms(
 	if (uniforms.uVinylSpin) uniforms.uVinylSpin.value = (curVinyl + dt * vinylSpinSpeed) % (Math.PI * 2);
 
 	const skullBackdropDim = fx.preset === SKULL_PRESET_INDEX ? 0.58 : 1;
-	const targetDim = skullBackdropDim;
+	const targetDim = opts?.wallpaperShelfDim && fx.preset === 5 ? 0.48 : skullBackdropDim;
 	const curDim = numValue(uniforms.uParticleDim, 1);
 	const easeK = targetDim < curDim ? 0.18 : 0.10;
 	if (uniforms.uParticleDim) uniforms.uParticleDim.value = lerp(curDim, targetDim, Math.min(1, easeK * Math.max(1, dt * 60)));

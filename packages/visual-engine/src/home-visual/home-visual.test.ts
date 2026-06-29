@@ -479,6 +479,17 @@ test("HomeVisual applies baseline skull shelf composition target and returns to 
 	expect(skull.scale.x).toBeCloseTo(2.34, 3);
 });
 
+test("HomeVisual applies baseline wallpaper shelf particle dim to material uniforms", async () => {
+	const scene = makeFakeScene();
+	const hv = await createHomeVisual({ scene: scene as never, threeFactory: makeFakeThree() });
+	hv.setPreset(5);
+	hv.setWallpaperShelfDimActive(true);
+	const uniforms = hv.getField().materialUniforms as { uParticleDim: { value: number } };
+	uniforms.uParticleDim.value = 1;
+	hv.update(makeFrameCtx({}, { uParticleDim: { value: 1 } }) as unknown as FrameContext);
+	expect(uniforms.uParticleDim.value).toBeCloseTo(1 + (0.48 - 1) * 0.18, 5);
+});
+
 test("bloom gate: when fx.bloom=false, bloomPoints.visible=false; when fx.bloom=true && bloomStrength>0.01, bloomPoints.visible=true (unless skull)", async () => {
 	const scene = makeFakeScene();
 	const hv = await createHomeVisual({ scene: scene as never, threeFactory: makeFakeThree() });

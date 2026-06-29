@@ -37,6 +37,9 @@ export interface StageLyricsLifecycleOpts {
 	getShelfVisibility?: () => number;
 	getShelfMode?: () => string | null | undefined;
 	getShelfHasOpenContent?: () => boolean;
+	getShelfPinnedOpen?: () => boolean;
+	getShelfAlwaysVisible?: () => boolean;
+	getShelfHoverCueValue?: () => number;
 	getSkullShelfOpen?: () => boolean;
 	dotTexture?: THREE.Texture;
 	pixelScale?: number;
@@ -240,6 +243,20 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 		return typeof opts.getShelfHasOpenContent === "function" ? !!opts.getShelfHasOpenContent() : false;
 	}
 
+	function getShelfPinnedOpen(): boolean {
+		return typeof opts.getShelfPinnedOpen === "function" ? !!opts.getShelfPinnedOpen() : false;
+	}
+
+	function getShelfAlwaysVisible(): boolean {
+		return typeof opts.getShelfAlwaysVisible === "function" ? !!opts.getShelfAlwaysVisible() : false;
+	}
+
+	function getShelfHoverCueValue(): number {
+		if (typeof opts.getShelfHoverCueValue !== "function") return 0;
+		const value = opts.getShelfHoverCueValue();
+		return Number.isFinite(value) ? value : 0;
+	}
+
 	function getSkullShelfOpen(): boolean {
 		return typeof opts.getSkullShelfOpen === "function" ? !!opts.getSkullShelfOpen() : false;
 	}
@@ -261,14 +278,16 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 
 	function shouldDimWallpaperForShelf(): boolean {
 		if (getShelfMode() !== "side") return false;
-		if (getShelfHasOpenContent()) return true;
-		return getShelfVisibility() > 0.24;
+		if (getShelfPinnedOpen()) return true;
+		return getShelfHasOpenContent();
 	}
 
 	function shouldAvoidStageLyricsForShelf(): boolean {
 		if (getShelfMode() !== "side") return false;
+		if (getShelfAlwaysVisible()) return true;
+		if (getShelfPinnedOpen()) return true;
 		if (getShelfHasOpenContent()) return true;
-		return getShelfVisibility() > 0.24;
+		return getShelfVisibility() > 0.24 || getShelfHoverCueValue() > 0.28;
 	}
 
 	function getLyricLayoutOptions(): Required<LyricLayoutOptions> & {

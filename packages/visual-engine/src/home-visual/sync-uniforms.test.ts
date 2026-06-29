@@ -139,6 +139,16 @@ test("preset 6 (skull) particle dim target = 0.58 and eases toward target with 0
 	expect(u.uParticleDim?.value as number).toBeCloseTo(expected, 5);
 });
 
+test("preset 5 wallpaper shelf dim target = 0.48 and eases toward target with baseline decrease rate", () => {
+	const fx = cloneFxState();
+	fx.preset = 5;
+	const u = makeUniforms();
+	(u.uParticleDim as { value: number }).value = 1.0;
+	syncFxUniforms(fx, makeSnapshot(), u, { dt: 1 / 60, wallpaperShelfDim: true });
+	const expected = 1.0 + (0.48 - 1.0) * 0.18;
+	expect(u.uParticleDim?.value as number).toBeCloseTo(expected, 5);
+});
+
 function snapshotFromSmooth(sB: number, sM: number, sT: number): number {
 	return Math.min(0.90, sB * 1.05 + 0 * 0.18);
 }

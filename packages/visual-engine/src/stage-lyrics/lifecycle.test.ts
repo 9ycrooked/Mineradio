@@ -907,6 +907,108 @@ test("update applies baseline non-wallpaper camera-lock shelf avoid layout", asy
 	lifecycle.dispose();
 });
 
+test("update avoids non-wallpaper camera-locked lyrics when side shelf is always visible", async () => {
+	const scene = makeFakeScene();
+	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
+	const lifecycle = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		gsapProvider: () => makeFakeGsap([]),
+		customEaseProvider: async () => null,
+		lyricLinesSupplier: () => [] as never,
+		currentTimeSupplier: () => 0,
+		isPlayingSupplier: () => true,
+		audioDurationSupplier: () => 9999,
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0,
+		lyricGlowBeatFlagSupplier: () => false,
+		lyricSunEnergyHolder: { get: () => 0, set: () => {} },
+		lyricLayoutOptionsSupplier: () => ({
+			lyricCameraLock: true,
+			lyricScale: 1.1,
+			lyricOffsetX: 0.4,
+			lyricOffsetY: -0.2,
+			lyricOffsetZ: 0.1,
+			lyricTiltX: 0,
+			lyricTiltY: 0,
+			preset: 0,
+		}),
+		getShelfMode: () => "side",
+		getShelfHasOpenContent: () => false,
+		getShelfVisibility: () => 0,
+		getShelfAlwaysVisible: () => true,
+		cameraSupplier: () => camera as never,
+		rand: () => 0.35,
+	} as Parameters<typeof createStageLyricsLifecycle>[0] & { getShelfAlwaysVisible: () => boolean });
+	await lifecycle.mount(scene as never);
+	lifecycle.update(makeCtx(0, 0.1));
+	const group = lifecycle.group as unknown as {
+		position: { x: number; y: number; z: number };
+		scale: { x: number; y: number; z: number };
+	};
+	const layoutScale = 1.1 * 0.72;
+	const layoutX = 0.4 - 1.36;
+	const layoutY = -0.2 + 0.06;
+	const layoutZ = 0.1 + 0.72;
+	const distance = 4.85 + layoutZ;
+	const visibleH = 2 * Math.tan((45 * Math.PI / 180) * 0.5) * distance;
+	const visibleW = visibleH * (16 / 9);
+	const safeW = Math.max(visibleW * 0.42, visibleW * 0.84 - Math.abs(layoutX) * 1.22);
+	const safeH = Math.max(visibleH * 0.18, visibleH * 0.44 - Math.abs(layoutY) * 0.82);
+	const viewportFit = Math.min(1, safeW / (5.4 * layoutScale), safeH / (0.78 * layoutScale));
+	const lockFit = Math.max(0.42, Math.min(1, viewportFit, 0.80 / layoutScale));
+	const firstFrameLockFitScale = 1 + (lockFit - 1) * (lockFit < 1 ? 0.18 : 0.10);
+	expect(group.scale.x).toBeCloseTo(layoutScale * firstFrameLockFitScale, 6);
+	expect(group.position.x).toBeCloseTo(layoutX * 0.24, 6);
+	expect(group.position.y).toBeCloseTo(layoutY * 0.24, 6);
+	expect(group.position.z).toBeCloseTo((-distance) * 0.24, 6);
+	lifecycle.dispose();
+});
+
+test("update avoids non-wallpaper camera-locked lyrics when side shelf hover cue is active", async () => {
+	const scene = makeFakeScene();
+	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
+	const lifecycle = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		gsapProvider: () => makeFakeGsap([]),
+		customEaseProvider: async () => null,
+		lyricLinesSupplier: () => [] as never,
+		currentTimeSupplier: () => 0,
+		isPlayingSupplier: () => true,
+		audioDurationSupplier: () => 9999,
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0,
+		lyricGlowBeatFlagSupplier: () => false,
+		lyricSunEnergyHolder: { get: () => 0, set: () => {} },
+		lyricLayoutOptionsSupplier: () => ({
+			lyricCameraLock: true,
+			lyricScale: 1.1,
+			lyricOffsetX: 0.4,
+			lyricOffsetY: -0.2,
+			lyricOffsetZ: 0.1,
+			lyricTiltX: 0,
+			lyricTiltY: 0,
+			preset: 0,
+		}),
+		getShelfMode: () => "side",
+		getShelfHasOpenContent: () => false,
+		getShelfVisibility: () => 0,
+		getShelfHoverCueValue: () => 0.29,
+		cameraSupplier: () => camera as never,
+		rand: () => 0.35,
+	} as Parameters<typeof createStageLyricsLifecycle>[0] & { getShelfHoverCueValue: () => number });
+	await lifecycle.mount(scene as never);
+	lifecycle.update(makeCtx(0, 0.1));
+	const group = lifecycle.group as unknown as { position: { x: number; y: number; z: number } };
+	expect(group.position.x).toBeCloseTo((0.4 - 1.36) * 0.24, 6);
+	expect(group.position.y).toBeCloseTo((-0.2 + 0.06) * 0.24, 6);
+	expect(group.position.z).toBeCloseTo(-(4.85 + 0.1 + 0.72) * 0.24, 6);
+	lifecycle.dispose();
+});
+
 test("update applies baseline skull edge-guard lockFit without camera lock", async () => {
 	const scene = makeFakeScene();
 	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
@@ -1355,6 +1457,90 @@ test("update applies baseline wallpaper camera-lock easing when shelf is not dim
 	expect(group.position.z).toBeCloseTo(targetZ * 0.34, 6);
 	const targetQuatX = Math.sin((12 * Math.PI / 180) / 2) * Math.cos((-8 * Math.PI / 180) / 2);
 	expect(group.quaternion.x).toBeCloseTo(targetQuatX * 0.36, 6);
+	lifecycle.dispose();
+});
+
+test("update keeps wallpaper camera-lock lyrics undimmed for side shelf auto visibility alone", async () => {
+	const scene = makeFakeScene();
+	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
+	const lifecycle = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		gsapProvider: () => makeFakeGsap([]),
+		customEaseProvider: async () => null,
+		lyricLinesSupplier: () => [] as never,
+		currentTimeSupplier: () => 0,
+		isPlayingSupplier: () => true,
+		audioDurationSupplier: () => 9999,
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0,
+		lyricGlowBeatFlagSupplier: () => false,
+		lyricSunEnergyHolder: { get: () => 0, set: () => {} },
+		lyricLayoutOptionsSupplier: () => ({
+			lyricCameraLock: true,
+			lyricScale: 1,
+			lyricOffsetX: 0.2,
+			lyricOffsetY: 0.1,
+			lyricOffsetZ: 0,
+			lyricTiltX: 12,
+			lyricTiltY: -8,
+			preset: 5,
+		}),
+		getShelfMode: () => "side",
+		getShelfHasOpenContent: () => false,
+		getShelfVisibility: () => 0.4,
+		cameraSupplier: () => camera as never,
+		rand: () => 0.35,
+	});
+	await lifecycle.mount(scene as never);
+	lifecycle.update(makeCtx(0, 0.1));
+	const group = lifecycle.group as unknown as { position: { x: number; y: number; z: number } };
+	expect(group.position.x).toBeCloseTo(0.2 * 0.34, 6);
+	expect(group.position.y).toBeCloseTo((0.1 + 0.08) * 0.34, 6);
+	expect(group.position.z).toBeCloseTo(-(4.85 + 1.15) * 0.34, 6);
+	lifecycle.dispose();
+});
+
+test("update dims wallpaper camera-lock lyrics when side shelf is pinned open", async () => {
+	const scene = makeFakeScene();
+	const camera = makeFakeCamera({ x: 0, y: 0, z: 0 });
+	const lifecycle = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		gsapProvider: () => makeFakeGsap([]),
+		customEaseProvider: async () => null,
+		lyricLinesSupplier: () => [] as never,
+		currentTimeSupplier: () => 0,
+		isPlayingSupplier: () => true,
+		audioDurationSupplier: () => 9999,
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0,
+		lyricGlowBeatFlagSupplier: () => false,
+		lyricSunEnergyHolder: { get: () => 0, set: () => {} },
+		lyricLayoutOptionsSupplier: () => ({
+			lyricCameraLock: true,
+			lyricScale: 1.2,
+			lyricOffsetX: 0.15,
+			lyricOffsetY: 0.1,
+			lyricOffsetZ: -0.2,
+			lyricTiltX: 0,
+			lyricTiltY: 0,
+			preset: 5,
+		}),
+		getShelfMode: () => "side",
+		getShelfHasOpenContent: () => false,
+		getShelfPinnedOpen: () => true,
+		cameraSupplier: () => camera as never,
+		rand: () => 0.35,
+	} as Parameters<typeof createStageLyricsLifecycle>[0] & { getShelfPinnedOpen: () => boolean });
+	await lifecycle.mount(scene as never);
+	lifecycle.update(makeCtx(0, 0.1));
+	const group = lifecycle.group as unknown as { position: { x: number; y: number; z: number } };
+	expect(group.position.x).toBeCloseTo((0.15 - 1.34) * 0.42, 6);
+	expect(group.position.y).toBeCloseTo((0.1 - 0.04) * 0.42, 6);
+	expect(group.position.z).toBeCloseTo(-(5.58 + -0.2 + 1.02) * 0.42, 6);
 	lifecycle.dispose();
 });
 

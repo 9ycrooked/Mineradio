@@ -327,6 +327,7 @@ export function disposeLyricGroup(lyric: LyricGroup): void {
 		disposeObject(sparkObj);
 	}
 	disposeTexture(lyric.mask.texture);
+	disposeTexture((lyric.sunMat as unknown as { map?: { dispose?: () => void } }).map);
 	disposeTexture((lyric.glowMat as unknown as { map?: { dispose?: () => void } }).map);
 	disposeTexture((lyric.readabilityMat as unknown as { map?: { dispose?: () => void } }).map);
 	disposeTexture((lyric.sparkMat as unknown as { uniforms: { uMap: { value: { dispose?: () => void } } } }).uniforms.uMap.value);
