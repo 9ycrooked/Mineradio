@@ -9,6 +9,7 @@
   position: fixed;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   max-width: min(82vw, 980px);
   min-width: 220px;
   min-height: 52px;
@@ -28,14 +29,9 @@
     inset 0 0 0 1px rgb(255 255 255 / 0.2);
   opacity: var(--desktop-lyrics-opacity);
   font-family: var(--desktop-lyrics-font-family);
-  font-size: clamp(
-    calc(var(--desktop-lyrics-min-font) * var(--desktop-lyrics-size)),
-    calc(4.8vw * var(--desktop-lyrics-size)),
-    calc(var(--desktop-lyrics-max-font) * var(--desktop-lyrics-size))
-  );
+  font-size: var(--desktop-lyrics-font-size);
   font-weight: var(--desktop-lyrics-font-weight);
   line-height: var(--desktop-lyrics-line-height);
-  letter-spacing: var(--desktop-lyrics-letter-spacing);
   transform: scale(var(--desktop-lyrics-lyric-scale));
   transform-origin: left center;
   text-shadow:
@@ -48,11 +44,45 @@
   touch-action: none;
 }
 
-.desktop-lyrics-text {
-  display: -webkit-box;
+.desktop-lyrics-viewport {
+  display: block;
+  width: min(var(--desktop-lyrics-viewport-width), calc(100vw - 8px));
+  max-width: calc(100vw - 8px);
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--desktop-lyrics-lines);
+  text-align: center;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 var(--desktop-lyrics-mask-edge-width),
+    #000 calc(100% - var(--desktop-lyrics-mask-edge-width)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 var(--desktop-lyrics-mask-edge-width),
+    #000 calc(100% - var(--desktop-lyrics-mask-edge-width)),
+    transparent 100%
+  );
+}
+
+.desktop-lyrics-scroll {
+  display: inline-block;
+  transform: translate3d(var(--desktop-lyrics-scroll-x), 0, 0)
+    scaleX(var(--desktop-lyrics-fit-x));
+  transform-origin: center;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.desktop-lyrics-text {
+  display: inline-block;
+  max-width: none;
+  white-space: nowrap;
+  letter-spacing: var(--desktop-lyrics-letter-spacing);
+  animation: desktop-lyrics-in 820ms cubic-bezier(0.16, 0.84, 0.32, 1.02)
+    forwards;
+  transform-origin: center;
 }
 
 .desktop-lyrics-locked {
@@ -62,4 +92,24 @@
 .desktop-lyrics-unlocked {
   cursor: move;
   pointer-events: auto;
+}
+
+@keyframes desktop-lyrics-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 32px, -120px) rotateX(24deg) rotateY(-18deg)
+      scale(0.78);
+    filter: blur(12px);
+  }
+
+  58% {
+    opacity: 1;
+    filter: blur(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg) scale(1);
+    filter: blur(0);
+  }
 }

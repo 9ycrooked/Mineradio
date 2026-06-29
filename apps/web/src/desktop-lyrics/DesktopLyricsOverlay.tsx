@@ -22,6 +22,36 @@ export interface DesktopLyricsOverlayProps extends DesktopLyricsDragCallbacks {
 export type DesktopLyricsStyle = CSSProperties &
   Record<`--desktop-lyrics-${string}`, string>;
 
+export interface DesktopLyricsViewport {
+  width: number;
+  height: number;
+}
+
+export interface DesktopLyricsLayoutOptions {
+  viewport?: DesktopLyricsViewport;
+  measureText?: (
+    text: string,
+    fontSize: number,
+    payload: DesktopLyricsPayload,
+  ) => number;
+}
+
+export interface DesktopLyricsLayout {
+  baseFontSize: number;
+  renderedFontSize: number;
+  fitPasses: number;
+  fitScaleX: number;
+  edgeWidth: number;
+  maskEdgeWidth: number;
+  verticalFeather: number;
+  viewportWidth: number;
+  clearWidth: number;
+  scrollNeeded: boolean;
+  scrollLimit: number;
+  scrollX: number;
+  letterSpacingPx: number;
+}
+
 export function normalizeDesktopLyricsPayload(
   payload: DesktopLyricsInput | null | undefined,
 ): DesktopLyricsPayload {
@@ -37,6 +67,7 @@ export function shouldRenderDesktopLyrics(
 
 export function computeDesktopLyricsStyle(
   payload: DesktopLyricsPayload,
+  layout = computeDesktopLyricsLayout(payload),
 ): DesktopLyricsStyle {
   return {
     left: `${payload.position.x}px`,
@@ -51,19 +82,175 @@ export function computeDesktopLyricsStyle(
     "--desktop-lyrics-opacity": String(payload.opacity),
     "--desktop-lyrics-font-family": payload.fontFamily || payload.font.family,
     "--desktop-lyrics-font-weight": String(payload.fontWeight ?? payload.font.weight),
-    "--desktop-lyrics-min-font": `${payload.font.fit.minPx}px`,
-    "--desktop-lyrics-max-font": `${payload.font.fit.maxPx}px`,
+    "--desktop-lyrics-font-size": `${layout.renderedFontSize}px`,
     "--desktop-lyrics-lines": String(payload.font.fit.maxLines),
-    "--desktop-lyrics-letter-spacing": `${payload.letterSpacing}em`,
+    "--desktop-lyrics-letter-spacing": `${layout.letterSpacingPx.toFixed(2)}px`,
     "--desktop-lyrics-line-height": String(payload.lineHeight),
     "--desktop-lyrics-lyric-scale": String(payload.lyricScale),
     "--desktop-lyrics-feather": String(payload.feather),
+    "--desktop-lyrics-fit-x": layout.fitScaleX.toFixed(4),
+    "--desktop-lyrics-scroll-x": `${layout.scrollX.toFixed(2)}px`,
+    "--desktop-lyrics-edge-width": `${layout.edgeWidth}px`,
+    "--desktop-lyrics-mask-edge-width": `${layout.maskEdgeWidth}px`,
+    "--desktop-lyrics-vertical-feather": `${layout.verticalFeather}px`,
+    "--desktop-lyrics-viewport-width": `${layout.viewportWidth}px`,
     "--desktop-lyrics-glow-strength": String(payload.motion.lyricGlowStrength),
     "--desktop-lyrics-high-bloom": String(payload.motion.highBloom),
     "--desktop-lyrics-beat-glow": String(payload.motion.beatGlow),
     "--desktop-lyrics-beat-pulse": String(payload.motion.beatPulse),
     "--desktop-lyrics-bass": String(payload.motion.bass),
   };
+}
+
+export function computeDesktopLyricsLayout(
+  payload: DesktopLyricsPayload,
+  options: DesktopLyricsLayoutOptions = {},
+): DesktopLyricsLayout {
+  const viewport = options.viewport ?? getDefaultDesktopLyricsViewport();
+  const text = String(payload.text || "Mineradio").replace(/\s+/g, " ").trim() || "Mineradio";
+  const safeWidth = Math.max(300, viewport.width - 8);
+  const edgeWidth = Math.round(clamp(safeWidth * 0.085, 54, 116));
+  const viewportWidth = Math.round(
+    Math.max(
+      280,
+      Math.min(
+        safeWidth - 12,
+        viewport.width - Math.min(240, Math.max(88, viewport.width * 0.13)),
+      ),
+    ),
+  );
+  const clearWidth = Math.max(160, viewportWidth - edgeWidth * 2);
+  const maxHeight = Math.max(64, viewport.height - 188);
+  const baseFontSize = Math.round(58 * clamp(payload.size, 0.72, 1.55));
+  const minSize = Math.max(24, Math.min(32, baseFontSize * 0.55));
+  const maxScrollableWidth = clearWidth * 1.76;
+  const measureText = options.measureText ?? measureDesktopLyricsTextFallback;
+
+  let fitPasses = 0;
+  let size = baseFontSize;
+  for (; fitPasses < 24; fitPasses += 1) {
+    const width = measureLineWidth(text, size, payload, measureText);
+    const height = size * payload.lineHeight;
+    if ((width <= maxScrollableWidth && height <= maxHeight) || size <= minSize) {
+      break;
+    }
+    size = Math.max(minSize, size - Math.max(1.25, size * 0.062));
+  }
+
+  const measuredWidth = measureLineWidth(text, size, payload, measureText);
+  const maxRenderedWidth = clearWidth * 1.82;
+  const fitScaleX =
+    measuredWidth > maxRenderedWidth
+      ? Math.max(0.72, maxRenderedWidth / measuredWidth)
+      : 1;
+  const scaledWidth = measuredWidth * fitScaleX;
+  const travelWidth = Math.max(0, scaledWidth - clearWidth);
+  const clearTailMargin = Math.max(58, Math.min(edgeWidth * 1.18, size * 1.08));
+  const centeredTailLimit =
+    scaledWidth > clearWidth * 1.28
+      ? Math.max(0, scaledWidth / 2 - clearWidth * 0.18)
+      : 0;
+  const scrollLimit =
+    travelWidth > 0
+      ? Math.max(travelWidth / 2 + clearTailMargin, centeredTailLimit)
+      : 0;
+  const scrollNeeded = travelWidth > Math.max(16, size * 0.18);
+  const maskEdgeWidth = scrollNeeded
+    ? Math.round(clamp(edgeWidth * 0.44, 26, 58))
+    : edgeWidth;
+  const scrollX = scrollNeeded
+    ? computeDesktopLyricsScrollOffset({
+        limit: scrollLimit,
+        progress: payload.progress,
+        progressSpan: payload.progressSpan,
+        viewportWidth: viewport.width,
+      })
+    : 0;
+
+  return {
+    baseFontSize,
+    renderedFontSize: Math.round(size),
+    fitPasses,
+    fitScaleX,
+    edgeWidth,
+    maskEdgeWidth,
+    verticalFeather: Math.round(clamp(size * 0.92, 38, 72)),
+    viewportWidth,
+    clearWidth,
+    scrollNeeded,
+    scrollLimit,
+    scrollX,
+    letterSpacingPx: Math.round(size) * payload.letterSpacing,
+  };
+}
+
+export function lyricScrollEase(t: number): number {
+  const x = clamp(t, 0, 1);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+export function lyricScrollInitialHoldMs(progressSpan: number): number {
+  return Math.round(clamp(progressSpan * 130, 140, 520));
+}
+
+export function computeDesktopLyricsScrollOffset(input: {
+  limit: number;
+  progress: number;
+  progressSpan: number;
+  viewportWidth: number;
+  rawProgress?: number;
+  holdActive?: boolean;
+}): number {
+  const limit = Math.max(0, input.limit);
+  if (limit <= 0) return 0;
+  let progress = clamp(input.progress, 0, 1);
+  const rawProgress = clamp(input.rawProgress ?? progress, 0, 1);
+  const finalCatch = clamp((rawProgress - 0.88) / 0.12, 0, 1);
+  progress = Math.max(progress, rawProgress - 0.10 * finalCatch);
+  const spanMs = Math.max(450, input.progressSpan * 1000);
+  const startGate = clamp(lyricScrollInitialHoldMs(input.progressSpan) / spanMs, 0.035, 0.18);
+  const longLineBias = clamp(limit / Math.max(260, input.viewportWidth), 0, 0.30);
+  const shortLineBias = clamp((4.8 - input.progressSpan) / 8, 0, 0.16);
+  let endGate = clamp(0.84 - longLineBias * 0.38 - shortLineBias * 0.50, 0.62, 0.88);
+  if (endGate <= startGate + 0.12) endGate = startGate + 0.12;
+  if (input.holdActive && progress < startGate) return 0;
+  if (progress >= endGate) return -limit;
+  return -limit * lyricScrollEase((progress - startGate) / (endGate - startGate));
+}
+
+function getDefaultDesktopLyricsViewport(): DesktopLyricsViewport {
+  if (typeof window !== "undefined") {
+    return {
+      width: window.innerWidth || 1280,
+      height: window.innerHeight || 220,
+    };
+  }
+  return { width: 1280, height: 220 };
+}
+
+function measureLineWidth(
+  text: string,
+  fontSize: number,
+  payload: DesktopLyricsPayload,
+  measureText: NonNullable<DesktopLyricsLayoutOptions["measureText"]>,
+): number {
+  return Math.max(1, measureText(text, fontSize, payload)) +
+    Math.max(0, Array.from(text).length - 1) * fontSize * payload.letterSpacing;
+}
+
+function measureDesktopLyricsTextFallback(
+  text: string,
+  fontSize: number,
+): number {
+  let units = 0;
+  for (const char of Array.from(text || "Mineradio")) {
+    units += /[^\x00-\xff]/.test(char) ? 0.96 : 0.56;
+  }
+  return Math.max(1, units * fontSize);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
 
 const useIsomorphicLayoutEffect =
@@ -197,6 +384,7 @@ export function DesktopLyricsOverlay({
     return null;
   }
 
+  const layout = computeDesktopLyricsLayout(normalized);
   const handlers = createDesktopLyricsPointerHandlers(
     normalized,
     { onToggleLock, onMoveBy },
@@ -213,13 +401,19 @@ export function DesktopLyricsOverlay({
           : "desktop-lyrics-unlocked",
       ].join(" ")}
       data-click-through={normalized.clickThrough ? "true" : "false"}
-      style={computeDesktopLyricsStyle(normalized)}
+      style={computeDesktopLyricsStyle(normalized, layout)}
       onPointerDown={handlers.onPointerDown}
       onPointerMove={handlers.onPointerMove}
       onPointerUp={handlers.onPointerUp}
       onPointerCancel={handlers.onPointerUp}
     >
-      <span className="desktop-lyrics-text">{normalized.text}</span>
+      <span className="desktop-lyrics-viewport">
+        <span className="desktop-lyrics-scroll">
+          <span key={normalized.text} className="desktop-lyrics-text">
+            {normalized.text}
+          </span>
+        </span>
+      </span>
     </div>
   );
 }

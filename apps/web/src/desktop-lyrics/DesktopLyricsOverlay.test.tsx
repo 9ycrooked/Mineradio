@@ -4,9 +4,12 @@ import React from "react";
 import {
   DesktopLyricsOverlay,
   areDesktopLyricsHotBoundsEqual,
+  computeDesktopLyricsLayout,
+  computeDesktopLyricsScrollOffset,
   computeDesktopLyricsStyle,
   computeDesktopLyricsHotBounds,
   createDesktopLyricsPointerHandlers,
+  lyricScrollEase,
   normalizeDesktopLyricsPayload,
   reportDesktopLyricsHotBounds,
   shouldRenderDesktopLyrics,
@@ -94,13 +97,67 @@ test("computeDesktopLyricsStyle exposes baseline top-level typography and motion
 
   expect(style["--desktop-lyrics-font-family"]).toContain("Noto Sans SC");
   expect(style["--desktop-lyrics-font-weight"]).toBe("850");
-  expect(style["--desktop-lyrics-letter-spacing"]).toBe("0.08em");
+  expect(style["--desktop-lyrics-letter-spacing"]).toContain("px");
   expect(style["--desktop-lyrics-line-height"]).toBe("1.24");
   expect(style["--desktop-lyrics-lyric-scale"]).toBe("1.36");
   expect(style["--desktop-lyrics-feather"]).toBe("0.03");
   expect(style["--desktop-lyrics-highlight"]).toBe("#fff0b8");
   expect(style["--desktop-lyrics-glow-strength"]).toBe("0.5");
   expect(style["--desktop-lyrics-beat-glow"]).toBe("0.8");
+});
+
+test("computeDesktopLyricsLayout mirrors baseline 24-pass fit and scroll mask constants", () => {
+  const payload = normalizeDesktopLyricsPayload({
+    enabled: true,
+    text: "这是一句非常非常非常长的桌面歌词，需要像原项目一样先缩字号再横向滚动",
+    size: 1.4,
+    lineHeight: 1.2,
+    letterSpacing: 0.06,
+    progressSpan: 5,
+  });
+  const layout = computeDesktopLyricsLayout(payload, {
+    viewport: { width: 900, height: 180 },
+    measureText: (_text, fontSize) => fontSize * 22,
+  });
+
+  expect(layout.fitPasses).toBeLessThanOrEqual(24);
+  expect(layout.renderedFontSize).toBeLessThan(layout.baseFontSize);
+  expect(layout.fitScaleX).toBeGreaterThanOrEqual(0.72);
+  expect(layout.scrollNeeded).toBe(true);
+  expect(layout.maskEdgeWidth).toBeGreaterThanOrEqual(26);
+  expect(layout.maskEdgeWidth).toBeLessThanOrEqual(58);
+  expect(layout.clearWidth).toBeGreaterThan(160);
+});
+
+test("computeDesktopLyricsScrollOffset uses smootherstep gates from the baseline", () => {
+  expect(lyricScrollEase(0)).toBe(0);
+  expect(Math.abs(lyricScrollEase(0.5) - 0.5)).toBeLessThan(0.00001);
+  expect(lyricScrollEase(1)).toBe(1);
+
+  const early = computeDesktopLyricsScrollOffset({
+    limit: 180,
+    progress: 0.02,
+    progressSpan: 4.8,
+    viewportWidth: 900,
+    holdActive: true,
+  });
+  const middle = computeDesktopLyricsScrollOffset({
+    limit: 180,
+    progress: 0.48,
+    progressSpan: 4.8,
+    viewportWidth: 900,
+  });
+  const late = computeDesktopLyricsScrollOffset({
+    limit: 180,
+    progress: 0.93,
+    progressSpan: 4.8,
+    viewportWidth: 900,
+  });
+
+  expect(early).toBe(0);
+  expect(middle).toBeLessThan(0);
+  expect(middle).toBeGreaterThan(-180);
+  expect(late).toBe(-180);
 });
 
 test("DesktopLyricsOverlay renders locked class and text from payload", () => {
@@ -116,8 +173,11 @@ test("DesktopLyricsOverlay renders locked class and text from payload", () => {
   );
   expect(html).toContain("desktop-lyrics-overlay");
   expect(html).toContain("desktop-lyrics-locked");
+  expect(html).toContain("desktop-lyrics-viewport");
+  expect(html).toContain("desktop-lyrics-scroll");
   expect(html).toContain("正在播放");
   expect(html).toContain("--desktop-lyrics-progress:50%");
+  expect(html).toContain("--desktop-lyrics-scroll-x:");
 });
 
 test("DesktopLyricsOverlay middle click locks only when unlocked and pointer drag emits delta", () => {
