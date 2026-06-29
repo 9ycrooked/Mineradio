@@ -69,3 +69,26 @@ test("loadVisualFxFromStorage normalizes unsupported lyric font keys", () => {
 	const fx = loadVisualFxFromStorage(fakeStorage);
 	expect(fx?.lyricFont).toBe("hei");
 });
+
+test("loadVisualFxFromStorage clamps baseline lyric layout controls", () => {
+	const storage = new Map<string, string>();
+	const fakeStorage = {
+		getItem: (key: string) => storage.get(key) ?? null,
+		setItem: (key: string, value: string) => { storage.set(key, value); },
+	};
+	fakeStorage.setItem(VISUAL_SETTINGS_STORE_KEY, JSON.stringify({
+		lyricScale: 9,
+		lyricOffsetX: -9,
+		lyricOffsetY: 9,
+		lyricOffsetZ: -9,
+		lyricTiltX: 99,
+		lyricTiltY: -99,
+	}));
+	const fx = loadVisualFxFromStorage(fakeStorage);
+	expect(fx?.lyricScale).toBe(1.65);
+	expect(fx?.lyricOffsetX).toBe(-2);
+	expect(fx?.lyricOffsetY).toBe(1.35);
+	expect(fx?.lyricOffsetZ).toBe(-1.6);
+	expect(fx?.lyricTiltX).toBe(42);
+	expect(fx?.lyricTiltY).toBe(-42);
+});

@@ -51,6 +51,7 @@ export interface StageLyricsLifecycleOpts {
 	lyricGlowStrengthSupplier?: () => number;
 	lyricGlowBeatFlagSupplier?: () => boolean;
 	lyricTextOptionsSupplier?: () => LyricTextOptions;
+	lyricLayoutOptionsSupplier?: () => LyricLayoutOptions;
 	lyricSunEnergyHolder?: { get(): number; set(v: number): void };
 	getBeatCamKick?: () => {
 		thetaKick: number;
@@ -86,6 +87,14 @@ export interface StageLyricsLifecycle {
 }
 
 type Vec3Like = { x: number; y: number; z: number };
+export interface LyricLayoutOptions {
+	lyricScale?: number;
+	lyricOffsetX?: number;
+	lyricOffsetY?: number;
+	lyricOffsetZ?: number;
+	lyricTiltX?: number;
+	lyricTiltY?: number;
+}
 function clamp(v: number, lo: number, hi: number): number {
 	if (!isFinite(v)) return lo;
 	return Math.max(lo, Math.min(hi, v));
@@ -218,6 +227,48 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 
 	function textOptionsSignature(opts0: LyricTextOptions): string {
 		return `${opts0.lyricFont ?? ""}|${opts0.lyricLetterSpacing ?? ""}|${opts0.lyricLineHeight ?? ""}|${opts0.lyricWeight ?? ""}`;
+	}
+
+	function getLyricLayoutOptions(): Required<LyricLayoutOptions> {
+		const raw = opts.lyricLayoutOptionsSupplier?.() ?? {};
+		return {
+			lyricScale: clamp(Number(raw.lyricScale) || 1, 0.35, 1.65),
+			lyricOffsetX: clamp(Number(raw.lyricOffsetX) || 0, -2, 2),
+			lyricOffsetY: clamp(Number(raw.lyricOffsetY) || 0, -1.2, 1.35),
+			lyricOffsetZ: clamp(Number(raw.lyricOffsetZ) || 0, -1.6, 1.6),
+			lyricTiltX: clamp(Number(raw.lyricTiltX) || 0, -42, 42),
+			lyricTiltY: clamp(Number(raw.lyricTiltY) || 0, -42, 42),
+		};
+	}
+
+	function applyFreeLyricLayout(): void {
+		if (!state.group) return;
+		const layout = getLyricLayoutOptions();
+		const group = state.group as unknown as {
+			position?: { set?: (x: number, y: number, z: number) => void; x: number; y: number; z: number };
+			rotation?: { x: number; y: number; z: number };
+			scale?: { setScalar?: (s: number) => void; set?: (x: number, y: number, z: number) => void; x: number; y: number; z: number };
+		};
+		const x = layout.lyricOffsetX;
+		const y = 0.2 + layout.lyricOffsetY;
+		const z = 1.46 + layout.lyricOffsetZ;
+		if (group.position?.set) group.position.set(x, y, z);
+		else if (group.position) {
+			group.position.x = x;
+			group.position.y = y;
+			group.position.z = z;
+		}
+		if (group.scale?.setScalar) group.scale.setScalar(layout.lyricScale);
+		else if (group.scale?.set) group.scale.set(layout.lyricScale, layout.lyricScale, layout.lyricScale);
+		else if (group.scale) {
+			group.scale.x = layout.lyricScale;
+			group.scale.y = layout.lyricScale;
+			group.scale.z = layout.lyricScale;
+		}
+		if (group.rotation) {
+			group.rotation.x = layout.lyricTiltX * Math.PI / 180;
+			group.rotation.y = layout.lyricTiltY * Math.PI / 180;
+		}
 	}
 
 	function getShelfProfile() {
@@ -628,6 +679,7 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 		state.glowFollowX *= 0.92;
 		state.glowFollowY *= 0.92;
 		state.glowFollowRoll *= 0.90;
+		applyFreeLyricLayout();
 		tickCurrentMesh(dt, shelf, snapshot, t);
 		tickOutgoingMeshes(dt, shelf, snapshot, t);
 	}

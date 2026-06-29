@@ -343,6 +343,54 @@ test("tickLyricsParticles passes live lyric text options into the built lyric gr
 	lifecycle.dispose();
 });
 
+test("update applies baseline free lyric layout scale, offsets, and tilt to the stage group", async () => {
+	const layout = {
+		lyricScale: 1.35,
+		lyricOffsetX: 0.45,
+		lyricOffsetY: -0.25,
+		lyricOffsetZ: 0.72,
+		lyricTiltX: 12,
+		lyricTiltY: -18,
+	};
+	const scene = makeFakeScene();
+	const lifecycle = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		gsapProvider: () => makeFakeGsap([]),
+		customEaseProvider: async () => null,
+		lyricLinesSupplier: () => [{ t: 0, text: "Layout lyric" }] as never,
+		currentTimeSupplier: () => 0.5,
+		isPlayingSupplier: () => true,
+		audioDurationSupplier: () => 9999,
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0,
+		lyricGlowBeatFlagSupplier: () => false,
+		lyricSunEnergyHolder: { get: () => 0, set: () => {} },
+		lyricLayoutOptionsSupplier: () => layout,
+		rand: () => 0.35,
+	});
+	await lifecycle.mount(scene as never);
+	lifecycle.setLyricLines([{ t: 0, text: "Layout lyric" }]);
+	lifecycle.update(makeCtx(0.5, 0.1));
+	await lifecycle.whenIdle();
+	lifecycle.update(makeCtx(0.6, 0.1));
+	const group = lifecycle.group as unknown as {
+		position: { x: number; y: number; z: number };
+		rotation: { x: number; y: number; z: number };
+		scale: { x: number; y: number; z: number };
+	};
+	expect(group.position.x).toBeCloseTo(0.45, 6);
+	expect(group.position.y).toBeCloseTo(-0.05, 6);
+	expect(group.position.z).toBeCloseTo(2.18, 6);
+	expect(group.scale.x).toBeCloseTo(1.35, 6);
+	expect(group.scale.y).toBeCloseTo(1.35, 6);
+	expect(group.scale.z).toBeCloseTo(1.35, 6);
+	expect(group.rotation.x).toBeCloseTo(12 * Math.PI / 180, 6);
+	expect(group.rotation.y).toBeCloseTo(-18 * Math.PI / 180, 6);
+	lifecycle.dispose();
+});
+
 test("tickLyricsParticles intro fallback sets currentIdx=-2 when currentTime < first line t", async () => {
 	const intros: RecordedCall[] = [];
 	const lc = createStageLyricsLifecycle({

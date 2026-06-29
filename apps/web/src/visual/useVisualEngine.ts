@@ -462,6 +462,17 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 						lyricWeight: fx.lyricWeight,
 					};
 				},
+				lyricLayoutOptionsSupplier: () => {
+					const fx = mergeFxState(mergeFxState(cloneFxState(), refs.fxDefaults), refs.fxRef?.current);
+					return {
+						lyricScale: fx.lyricScale,
+						lyricOffsetX: fx.lyricOffsetX,
+						lyricOffsetY: fx.lyricOffsetY,
+						lyricOffsetZ: fx.lyricOffsetZ,
+						lyricTiltX: fx.lyricTiltX,
+						lyricTiltY: fx.lyricTiltY,
+					};
+				},
 				pixelScale: 1,
 				reduceMotion: prefersReducedMotion,
 			});
