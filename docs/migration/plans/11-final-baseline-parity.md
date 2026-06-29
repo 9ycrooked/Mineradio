@@ -209,6 +209,8 @@ This plan supersedes using the old master implementation plan as a direct execut
 
 **Goal:** Restore the baseline user path: search, merge results, play through audio proxy, queue operations, lyrics, current-line sync, and provider errors.
 
+> 2026-06-30 execution status: Phase 2 is code-side complete for current migration execution. Existing implementation plus regression tests cover Steps 1-7: production `SearchShell` routes all/song through cross-source search, `App` uses global `/song-url` and sidecar `/audio-proxy?url=...`, search-result playback dedupes/moves to queue front, and existing shared/sidecar/web tests cover lyrics and provider runtime parity. Screenshots, real WebView2 playback, and B1 account evidence remain required release/parity evidence and do not close final checklist gates by themselves.
+
 **Files:**
 
 - Modify: `apps/web/src/api/sidecar-client.ts`
@@ -231,7 +233,7 @@ This plan supersedes using the old master implementation plan as a direct execut
 - Provider handling: `server.js` Netease cloudsearch/song_url_v1/song_url fallback, QQ vkey/musicu/lyric fallback.
 - Lyrics: `public/index.html` fallback lyric, provider lyric load, YRC/LRC parsing, stage lyric tick.
 
-- [ ] **Step 1: Add failing search and playback integration tests**
+- [x] **Step 1: Add failing search and playback integration tests**
 
   Add tests for default `song` search using merged Netease + QQ results, provider-specific search modes, search-result click dedupe/move-to-front, and audio source using sidecar `/audio-proxy`.
 
@@ -244,27 +246,27 @@ This plan supersedes using the old master implementation plan as a direct execut
 
   Expected before implementation: tests fail on merged search, queue semantics, or proxy URL expectations.
 
-- [ ] **Step 2: Route web client through cross-source services**
+- [x] **Step 2: Route web client through cross-source services**
 
   Make UI search use the sidecar global `/search` endpoint for baseline `song` mode and provider routes only for explicit `netease` or `qq` modes. Make UI song URL resolution use the global `/song-url` endpoint so fallback providers are exercised.
 
-- [ ] **Step 3: Use audio proxy for HTMLAudioElement**
+- [x] **Step 3: Use audio proxy for HTMLAudioElement**
 
   Convert resolved provider URLs to sidecar `/audio-proxy?url=...` before `controller.load`. Preserve Range/seek behavior and avoid exposing raw provider URL as the final audio element source.
 
-- [ ] **Step 4: Restore queue semantics**
+- [x] **Step 4: Restore queue semantics**
 
   Implement baseline click behavior: existing track moves to queue front, new track inserts at front for immediate playback, next insert preserves current track semantics, clear/delete behavior matches baseline, and ended follows the selected mode.
 
-- [ ] **Step 5: Restore lyrics contract**
+- [x] **Step 5: Restore lyrics contract**
 
   Extend shared lyric structures only as needed to preserve baseline word timing, duration, translation, and provider metadata. Feed visual-engine stage lyrics with timing-rich data instead of only `{ t, text }`.
 
-- [ ] **Step 6: Harden provider parity**
+- [x] **Step 6: Harden provider parity**
 
   Netease must try baseline-quality levels and classify login/VIP/trial/copyright states. QQ must preserve song URL quality fallback, authorization/login-required classification, lyric retrieval, playlist detail, and login status behavior. Provider errors must use shared envelope error codes and recovery actions.
 
-- [ ] **Step 7: Verify automated phase**
+- [x] **Step 7: Verify automated phase**
 
   Run:
 
@@ -282,6 +284,8 @@ This plan supersedes using the old master implementation plan as a direct execut
   Expected: all commands exit 0.
 
 - [ ] **Step 8: Manual WebView2 evidence**
+
+  2026-06-30 note: this evidence remains required for final release/parity sign-off, but screenshots/recordings and real account evidence are not blockers for current phase progression per user instruction.
 
   Verify:
 

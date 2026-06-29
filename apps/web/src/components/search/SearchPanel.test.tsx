@@ -147,7 +147,17 @@ test("playSearchResult on second track advances currentTrack", () => {
 	const tracks = [makeTrack("a", "A"), makeTrack("b", "B")];
 	usePlaybackStore.getState().setQueue(tracks);
 	playSearchResult(tracks[1]);
-	expect(usePlaybackStore.getState().queue.length).toBeGreaterThanOrEqual(2);
+	expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(["b", "a"]);
+	expect(usePlaybackStore.getState().currentTrack?.id).toBe("b");
+});
+
+test("playSearchResult dedupes an existing track and moves it to the queue front", () => {
+	resetStores();
+	const tracks = [makeTrack("a", "A"), makeTrack("b", "B"), makeTrack("c", "C")];
+	usePlaybackStore.getState().setQueue(tracks);
+	usePlaybackStore.getState().playAt(2);
+	playSearchResult(tracks[1]);
+	expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(["b", "a", "c"]);
 	expect(usePlaybackStore.getState().currentTrack?.id).toBe("b");
 });
 

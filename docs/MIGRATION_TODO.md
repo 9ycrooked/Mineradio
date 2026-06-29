@@ -14,7 +14,8 @@
 | --- | --- | --- | --- | --- |
 | Phase 0: Reconcile Plans And Evidence | Completed | 2026-06-30 | Docs-only; no source migration | 对齐 checklist、master plan、08/10 historical plans、baseline capture 和本 ledger；未从 code-only evidence 勾选 capability gate。 |
 | Phase 1: Startup Shell And Empty Home Parity | Completed | 2026-06-30 | Code-side/current execution complete; this status update is docs-only | 当前实现已覆盖 Step 1-7，`bun test apps/web`、`bun run --filter ./apps/web build`、`git diff --check` 通过；截图/录屏不作为当前阶段推进阻塞，但仍保留为 release/parity evidence。 |
-| Phase 2: Search, Queue, Playback, Lyrics, And Provider Runtime Parity | Next | 待执行 | Plan 11 Phase 2 | 继续执行代码侧与自动验证；真实账号态、截图/录屏等外部 evidence 不作为当前阶段推进阻塞，仍由 release/parity gate 跟踪。 |
+| Phase 2: Search, Queue, Playback, Lyrics, And Provider Runtime Parity | Completed | 2026-06-30 | Code-side/current execution complete; tests + docs | 现有实现与本轮回归测试覆盖 Step 1-7；`bun test packages/shared`、shared typecheck、`bun test sidecars/api`、sidecar typecheck、`bun test apps/web`、web build、`git diff --check` 通过；真实账号态、截图/录屏等外部 evidence 不作为当前阶段推进阻塞，仍由 release/parity gate 跟踪。 |
+| Phase 3: Visual Engine Full Parity | Next | 待执行 | Plan 11 Phase 3 | 继续执行代码侧与自动验证；WebView2/Electron 视觉录屏和截图仍作为最终 release/parity evidence 跟踪。 |
 
 Large screenshots/recordings must stay outside git. Commit only small documentation or metadata that records artifact paths and evidence status.
 

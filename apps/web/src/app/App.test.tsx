@@ -853,6 +853,78 @@ test("App replaces stale lyrics with current track fallback while provider lyric
 	restoreAudio();
 });
 
+test("App loads sidecar audio-proxy URL into the audio element for raw provider song URLs", async () => {
+	await import("../../../../packages/visual-engine/src/runtime/happy-dom-preload");
+	(globalThis as unknown as { localStorage: Storage }).localStorage = window.localStorage;
+	const restoreAudio = installAppStubAudio();
+	const host = document.createElement("div");
+	let root: ReturnType<typeof createRoot> | null = null;
+	try {
+		localStorage.clear();
+		usePlaybackStore.getState().clearQueue();
+		useLyricsStore.getState().reset();
+		const rawProviderUrl = "https://media.example.test/song.mp3?token=raw-provider";
+		const proxiedUrl = `http://127.0.0.1:39999/audio-proxy?url=${encodeURIComponent(rawProviderUrl)}`;
+		usePlaybackStore.getState().setCurrentTrack({
+			provider: "netease",
+			id: "proxy-audio-1",
+			sourceId: "proxy-audio-1",
+			title: "Proxy Song",
+			artists: ["Artist"],
+			album: "",
+			coverUrl: "",
+			durationMs: 60000,
+			qualityHints: [],
+			playableState: "unknown",
+		});
+
+		const fakeClient = {
+			async resolveSongUrl() {
+				return { url: rawProviderUrl, quality: "standard", proxied: false };
+			},
+			audioProxyUrl(url: string) {
+				expect(url).toBe(rawProviderUrl);
+				return proxiedUrl;
+			},
+			async lyric() {
+				return {
+					provider: "netease",
+					trackId: "proxy-audio-1",
+					lines: [],
+					hasTranslation: false,
+					isWordByWord: false,
+				};
+			},
+		} as unknown as SidecarClient;
+		const rootConfig: RuntimeConfig = {
+			sidecarBaseUrl: "http://127.0.0.1:39999",
+			appDataDir: "",
+			appVersion: "0.0.0-test",
+			schemaVersion: "0.1.0",
+			updaterPublicKeyConfigured: false,
+		};
+		document.body.appendChild(host);
+		root = createRoot(host);
+		flushSync(() => root?.render(<App SplashComponent={() => null} VisualComponent={() => <div id="visual-host" />} createSidecarClient={() => fakeClient} initialRuntimeConfig={rootConfig} />));
+
+		for (let i = 0; i < 12 && appStubAudioInstances[0]?.src !== proxiedUrl; i += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
+		expect(appStubAudioInstances[0]?.src).toBe(proxiedUrl);
+		expect(appStubAudioInstances[0]?.src).toContain("/audio-proxy?url=");
+		expect(appStubAudioInstances[0]?.src).not.toBe(rawProviderUrl);
+		expect(appStubAudioInstances[0]?.loadCalled).toBeGreaterThan(0);
+	} finally {
+		root?.unmount();
+		host.remove();
+		usePlaybackStore.getState().clearQueue();
+		useLyricsStore.getState().reset();
+		localStorage.clear();
+		restoreAudio();
+	}
+});
+
 test("App shows the baseline trial banner when provider returns a trial-only URL", async () => {
 	await import("../../../../packages/visual-engine/src/runtime/happy-dom-preload");
 	(globalThis as unknown as { localStorage: Storage }).localStorage = window.localStorage;
