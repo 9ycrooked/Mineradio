@@ -88,7 +88,7 @@ src/
 
 ```powershell
 $bun = "C:\Users\zhanw\.bun\bin\bun.exe"
-& $bun test sidecars/api                    # 69 pass / 0 fail current
+& $bun test sidecars/api                    # 163 pass / 0 fail current
 & $bun run --filter ./sidecars/api typecheck
 & $bun run --filter ./sidecars/api dev      # 起 Bun.serve 实测 /health
 node --check server.js                       # legacy baseline 不能挂
@@ -97,7 +97,7 @@ git diff --check
 
 ## NOTES
 
-- 测试端到端：当前 `sidecars/api/src/server.test.ts` 内 Netease search/songUrl/lyric/playlists 路由测试**会触达真实 Netease 网络**（最近 commit 改 placeholder → 真 adapter 后写的 envelope shape 测试），CI 离线时会 flaky；观察是否需要后续注入 fake transport。
+- 路由层测试不触达真实 provider 网络：`server.test.ts` 对 provider routes 使用 `createRouteHandler({ providerAdapters })` 注入 fake adapter，只验证路由解析、adapter 调用和 envelope 形状。真实 Netease/QQ 网络行为只放在 adapter/service 专项测试或手动 WebView2/B1 凭证验证里。
 - `audio-proxy.ts` 已完成 code-side local proxy：`GET /audio-proxy?url=<encoded http/https URL>` 会转发 `Range`，不会转发 incoming `Cookie` / `Authorization`；透传 `content-type`、`content-length`、`accept-ranges`、`content-range`、`cache-control`、`etag`、`last-modified`，并加 `Access-Control-Allow-Origin:*`。真实 WebView2 HTMLAudioElement 播放仍需要手动验证，发布 gate 不能只凭 URL/单测勾选。
 - license：QQ 客户端依赖 `qq-music-api` (GPL-3.0)；sidecar 是私有 Bun 工作区（`@mineradio/sidecar-api` private:true），不开源分发包随 binary 分发时需 NOTICE / GPL 通告 (见 P10.c 待办)。
 - Transitive deps `axios/cheerio/express/jade/js-base64/moment/xml2js/cookie-parser` 全部 GPL/MIT/BSD 兼容，已记入 `docs/migration/LICENSE_GATE.md` Dependency Audit 表 [transitive via qq-music-api].

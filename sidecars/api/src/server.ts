@@ -373,11 +373,12 @@ export function createRouteHandler(deps: RouteHandlerDeps = {}) {
         }
         if (sub === "lyric" && method === "POST") {
           const body = await parseJsonBody(request);
-          if (body === null) {
+          const parsedTrack = TrackSchema.safeParse(body);
+          if (!parsedTrack.success) {
             response = json(
               fail({
                 code: "BAD_REQUEST",
-                message: "invalid or missing JSON body",
+                message: "invalid or missing Track body",
                 provider: providerId,
                 retryable: false
               }),
@@ -386,7 +387,7 @@ export function createRouteHandler(deps: RouteHandlerDeps = {}) {
             await logRequest(logger, { method, path, status: response.status, startedAt, provider: providerId, action: sub });
             return response;
           }
-          response = json(ok(await adapter.lyric(body as Track)));
+          response = json(ok(await adapter.lyric(parsedTrack.data)));
           await logRequest(logger, { method, path, status: response.status, startedAt, provider: providerId, action: sub });
           return response;
         }

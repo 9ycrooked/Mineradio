@@ -654,7 +654,23 @@ test("POST /song-url uses injected cross-source resolver", async () => {
 });
 
 test("POST /providers/netease/song-url valid body calls adapter (not 501 NOT_IMPLEMENTED)", async () => {
-  const r = await call("/providers/netease/song-url", {
+  const calls: unknown[] = [];
+  const fakeNetease: ProviderAdapter = {
+    ...providers.netease,
+    async songUrl(track, opts) {
+      calls.push({ track, opts });
+      return {
+        url: "https://media.example.test/netease.mp3",
+        proxied: false,
+        requestedQuality: opts?.quality ?? null
+      };
+    }
+  };
+  const handler = createRouteHandler({
+    providerAdapters: { ...providers, netease: fakeNetease }
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/providers/netease/song-url", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -664,21 +680,53 @@ test("POST /providers/netease/song-url valid body calls adapter (not 501 NOT_IMP
       title: "t",
       artists: []
     })
+  }));
+
+  expect(r.status).toBe(200);
+  expect(calls).toEqual([{
+    track: {
+      provider: "netease",
+      id: "1",
+      sourceId: "1",
+      title: "t",
+      artists: [],
+      album: "",
+      coverUrl: "",
+      playableState: "unknown",
+      qualityHints: []
+    },
+    opts: { quality: undefined }
+  }]);
+  expect(await body(r)).toEqual({
+    ok: true,
+    data: {
+      url: "https://media.example.test/netease.mp3",
+      proxied: false,
+      requestedQuality: null
+    }
   });
-  expect(r.status).not.toBe(501);
-  if (r.status === 200) {
-    const b = await body(r);
-    expect(b.ok).toBe(true);
-    expect(typeof b.data.url).toBe("string");
-  } else {
-    const b = await body(r);
-    expect(b.ok).toBe(false);
-    expect(b.error.provider).toBe("netease");
-  }
 });
 
 test("POST /providers/netease/lyric valid body returns lyric payload (not 501 NOT_IMPLEMENTED)", async () => {
-  const r = await call("/providers/netease/lyric", {
+  const calls: unknown[] = [];
+  const fakeNetease: ProviderAdapter = {
+    ...providers.netease,
+    async lyric(track) {
+      calls.push(track);
+      return {
+        provider: "netease",
+        trackId: track.id,
+        lines: [{ timeMs: 0, text: "测试歌词", durationMs: 4800, charCount: 4 }],
+        hasTranslation: false,
+        isWordByWord: false
+      };
+    }
+  };
+  const handler = createRouteHandler({
+    providerAdapters: { ...providers, netease: fakeNetease }
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/providers/netease/lyric", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -688,11 +736,53 @@ test("POST /providers/netease/lyric valid body returns lyric payload (not 501 NO
       title: "t",
       artists: []
     })
-  });
-  expect(r.status).not.toBe(501);
+  }));
+
+  expect(r.status).toBe(200);
+  expect(calls).toEqual([{
+    provider: "netease",
+    id: "1",
+    sourceId: "1",
+    title: "t",
+    artists: [],
+    album: "",
+    coverUrl: "",
+    qualityHints: [],
+    playableState: "unknown"
+  }]);
   const b = await body(r);
   expect(b.ok).toBe(true);
-  expect(b.data.lines).toBeDefined();
+  expect(b.data).toEqual({
+    provider: "netease",
+    trackId: "1",
+    lines: [{ timeMs: 0, text: "测试歌词", durationMs: 4800, charCount: 4 }],
+    hasTranslation: false,
+    isWordByWord: false
+  });
+});
+
+test("POST /providers/netease/lyric invalid Track body returns 400 BAD_REQUEST", async () => {
+  const fakeNetease: ProviderAdapter = {
+    ...providers.netease,
+    async lyric() {
+      throw new Error("lyric adapter should not run for invalid Track body");
+    }
+  };
+  const handler = createRouteHandler({
+    providerAdapters: { ...providers, netease: fakeNetease }
+  });
+
+  const r = await handler(new Request("http://127.0.0.1/providers/netease/lyric", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "missing provider and id" })
+  }));
+
+  expect(r.status).toBe(400);
+  const b = await body(r);
+  expect(b.ok).toBe(false);
+  expect(b.error.code).toBe("BAD_REQUEST");
+  expect(b.error.provider).toBe("netease");
 });
 
 test("POST /providers/qq/logout returns 501 action no-session when no cookie", async () => {
