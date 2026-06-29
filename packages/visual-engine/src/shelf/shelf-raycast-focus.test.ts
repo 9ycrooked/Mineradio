@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { createShelfPointerRaycastFocus, createShelfPointerRaycastHitGetter } from "./shelf-raycast-focus";
+import {
+	createShelfPointerContentRowRaycastHitGetter,
+	createShelfPointerRaycastFocus,
+	createShelfPointerRaycastHitGetter,
+	createShelfPointerStrictRaycastHitGetter,
+} from "./shelf-raycast-focus";
 
 test("createShelfPointerRaycastFocus maps pointer coordinates to NDC and raycasts side shelf cards", async () => {
 	const vectorValues: number[][] = [];
@@ -185,6 +190,73 @@ test("createShelfPointerRaycastHitGetter passes explicit screen padding to fallb
 	});
 
 	expect(pickPads).toEqual([18]);
+});
+
+test("createShelfPointerStrictRaycastHitGetter never uses screen-space fallback", async () => {
+	class FakeVector2 {
+		set() {}
+	}
+	class FakeRaycaster {
+		setFromCamera() {}
+	}
+	let raycastCount = 0;
+	const getHit = await createShelfPointerStrictRaycastHitGetter({
+		camera: {} as never,
+		three: {
+			Raycaster: FakeRaycaster,
+			Vector2: FakeVector2,
+		} as never,
+		shelfManager: {
+			raycastCards: () => {
+				raycastCount += 1;
+				return null;
+			},
+		},
+	});
+
+	expect(getHit({
+		clientX: 12,
+		clientY: 34,
+		viewportWidth: 1200,
+		viewportHeight: 900,
+		screenPad: 72,
+	})).toBeNull();
+	expect(raycastCount).toBe(1);
+});
+
+test("createShelfPointerContentRowRaycastHitGetter raycasts detail row meshes", async () => {
+	const vectorValues: number[][] = [];
+	class FakeVector2 {
+		x = 0;
+		y = 0;
+		set(x: number, y: number) {
+			this.x = x;
+			this.y = y;
+			vectorValues.push([x, y]);
+		}
+	}
+	class FakeRaycaster {
+		setFromCamera() {}
+	}
+	const rowHit = { row: { id: "song-1", name: "Song 1" }, index: 1 };
+	const getHit = await createShelfPointerContentRowRaycastHitGetter({
+		camera: {} as never,
+		three: {
+			Raycaster: FakeRaycaster,
+			Vector2: FakeVector2,
+		} as never,
+		shelfManager: {
+			raycastContentRows: () => rowHit as never,
+		},
+	});
+
+	expect(getHit({
+		clientX: 600,
+		clientY: 450,
+		viewportWidth: 1200,
+		viewportHeight: 900,
+	})).toBe(rowHit);
+	expect(vectorValues).toEqual([[0, 0]]);
 });
 
 test("createShelfPointerRaycastFocus stays false outside side mode or without viewport size", async () => {

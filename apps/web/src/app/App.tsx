@@ -665,6 +665,7 @@ export function App({
   const playQueueAt = usePlaybackStore((s) => s.playAt);
   const removeQueueAt = usePlaybackStore((s) => s.removeAt);
   const insertQueueNext = usePlaybackStore((s) => s.insertNext);
+  const searchKeyword = useSearchStore((s) => s.keyword);
   const setSearchKeyword = useSearchStore((s) => s.setKeyword);
   const setSearchError = useSearchStore((s) => s.setError);
 
@@ -2549,6 +2550,7 @@ export function App({
           return key ? likeBusyMap[key] === true : false;
         }}
         hasCustomCover={currentHasCustomCover}
+        peek={emptyHomeActive || searchKeyword.trim().length > 0}
       />
       <TopRightControls
         onHome={goHome}

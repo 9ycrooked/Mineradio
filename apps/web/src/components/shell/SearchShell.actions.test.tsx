@@ -121,3 +121,34 @@ test("SearchShell action buttons call like and collect callbacks without startin
 	expect(usePlaybackStore.getState().currentTrack).toBeNull();
 	root.unmount();
 });
+
+test("SearchShell follows baseline peek class from its host state", async () => {
+	useSearchStore.setState({ keyword: "", results: [], loading: false, error: null });
+	const first = await renderSearchShell(<SearchShell client={null} peek={false} />);
+	expect(first.container.querySelector("#search-area")?.classList.contains("peek")).toBe(false);
+	first.root.unmount();
+	first.container.remove();
+	domRoot = null;
+
+	const second = await renderSearchShell(<SearchShell client={null} peek />);
+	expect(second.container.querySelector("#search-area")?.classList.contains("peek")).toBe(true);
+	second.root.unmount();
+});
+
+test("SearchShell clears stale results after clearing input so host peek can hide", async () => {
+	useSearchStore.setState({
+		results: [makeTrack("100")],
+		loading: false,
+		error: null,
+		provider: "netease",
+		keyword: "",
+	});
+
+	const { root, container } = await renderSearchShell(<SearchShell client={null} peek={false} />);
+	await Promise.resolve();
+
+	expect(useSearchStore.getState().results).toEqual([]);
+	expect(container.querySelector("#search-results")?.classList.contains("show")).toBe(false);
+	expect(container.querySelector("#search-area")?.classList.contains("peek")).toBe(false);
+	root.unmount();
+});

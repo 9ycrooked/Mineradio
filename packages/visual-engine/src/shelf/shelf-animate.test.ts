@@ -475,6 +475,89 @@ test("ShelfManager.openDetail pins side shelf for baseline detail lifecycle with
 	expect(m.getShelfPinnedOpen()).toBe(true);
 });
 
+test("ShelfManager dims first-level cards to baseline detail-open opacity multipliers", () => {
+	const children: unknown[] = [];
+	const scene = {
+		add() {},
+		remove() {},
+	} as unknown as import("three").Scene;
+	class FakeGroup {
+		visible = true;
+		position = { set() {}, x: 0, y: 0, z: 0 };
+		rotation = { set() {}, x: 0, y: 0, z: 0 };
+		scale = { setScalar() {}, x: 1, y: 1, z: 1 };
+		renderOrder = 0;
+		userData: Record<string, unknown> = {};
+		add(obj: unknown) {
+			children.push(obj);
+		}
+		remove(obj: unknown) {
+			const idx = children.indexOf(obj);
+			if (idx >= 0) children.splice(idx, 1);
+		}
+		updateMatrixWorld() {}
+	}
+	class FakeMesh {
+		position = { set() {}, x: 0, y: 0, z: 0 };
+		rotation = { set() {}, x: 0, y: 0, z: 0 };
+		scale = { setScalar() {}, x: 1, y: 1, z: 1 };
+		visible = true;
+		renderOrder = 0;
+		userData: Record<string, unknown> = {};
+		constructor(
+			public geometry: unknown,
+			public material: { opacity: number; color: { setScalar(v: number): void } },
+		) {}
+		updateMatrixWorld() {}
+	}
+	const documentLike = makeCanvasDocument();
+	const three = {
+		Group: FakeGroup,
+		Mesh: FakeMesh,
+		PlaneGeometry: class {
+			dispose() {}
+		},
+		CanvasTexture: class {
+			needsUpdate = false;
+			minFilter: unknown = null;
+			magFilter: unknown = null;
+			generateMipmaps = true;
+			dispose() {}
+		},
+		MeshBasicMaterial: class {
+			opacity = 1;
+			color = { scalar: 1, setScalar(v: number) { this.scalar = v; } };
+			constructor(init: Record<string, unknown>) {
+				Object.assign(this, init);
+			}
+			dispose() {}
+		},
+		LinearFilter: "LinearFilter",
+		DoubleSide: "DoubleSide",
+	} as unknown as typeof import("three");
+	const m = createShelfManager({ scene, three, document: documentLike });
+	m.setMode("side");
+	m.setShelfPresence("always");
+	m.setShelfVisibility(1);
+	m.setData([
+		{ type: "playlist", title: "A", playlistId: "a" },
+		{ type: "playlist", title: "B", playlistId: "b" },
+		{ type: "playlist", title: "C", playlistId: "c" },
+	]);
+	m.getState().centerTarget = 1;
+	m.getState().centerSmooth = 1;
+	m.openDetail(1, { playlistId: "b", title: "B" });
+	m.update({ ...makeCtx(createRuntimeUniforms(), 16), camera: null as never });
+
+	const open = renderedShelfCard({ children } as import("three").Group, 1);
+	const left = renderedShelfCard({ children } as import("three").Group, 0);
+	const right = renderedShelfCard({ children } as import("three").Group, 2);
+
+	expect((open?.material as { opacity: number } | undefined)?.opacity).toBeCloseTo(0.96 * 0.16, 5);
+	expect((left?.material as { opacity: number } | undefined)?.opacity).toBeCloseTo(0.70 * 0.96 * 0.08, 5);
+	expect((right?.material as { opacity: number } | undefined)?.opacity).toBeCloseTo(0.70 * 0.96 * 0.08, 5);
+});
+
 test("ShelfManager exposes a content-list skeleton for open detail state", () => {
 	const m = createShelfManager({ now: () => 42000 });
 	expect(m.hasOpenContent()).toBe(false);
@@ -1420,6 +1503,59 @@ test("ShelfManager closeDetail disposes detail meshes and clears content-list sc
 	expect(findDetailMeshes(group).length).toBe(0);
 	expect(list?.hasScreenTargetAt({ x: 400, y: 300 })).toBe(false);
 	expect(disposeEvents).toBe(detailMeshes.length * 3);
+});
+
+test("ShelfManager.raycastContentRows intersects visible detail row meshes and returns row metadata", async () => {
+	const three = await import("three");
+	const scene = new three.Scene();
+	const group = new three.Group();
+	scene.add(group);
+	const camera = new three.OrthographicCamera(-4, 4, 3, -3, 0.1, 100);
+	camera.position.set(0, 0, 10);
+	camera.lookAt(0, 0, 0);
+	camera.updateMatrixWorld(true);
+	camera.updateProjectionMatrix();
+	const uniforms = createRuntimeUniforms();
+	uniforms.uTime.value = 1;
+	const rows = [
+		{ id: "a", name: "Song A", artist: "Artist A" },
+		{ id: "b", name: "Song B", artist: "Artist B" },
+	];
+	const m = createShelfManager({ scene, group, three, document: makeCanvasDocument() });
+	m.setShelfVisibility(1);
+	m.openDetail(0, { playlistId: "p1", title: "Detail" });
+	m.getContentList()?.setRows(rows);
+	m.update({
+		...makeCtx(uniforms, 16),
+		camera: camera as unknown as FrameContext["camera"],
+		viewport: { width: 800, height: 600 },
+	} as FrameContext & { viewport: { width: number; height: number } });
+
+	const detailMeshes = (findDetailMeshes(group) as import("three").Mesh[])
+		.filter((mesh) => mesh.userData.shelfContentKind === "row");
+	expect(detailMeshes.length).toBeGreaterThanOrEqual(2);
+	detailMeshes[0]!.visible = false;
+	let intersected: unknown[] = [];
+	const point = new three.Vector3(1, 2, 3);
+	const uv = new three.Vector2(0.4, 0.6);
+	const raycaster = {
+		intersectObjects(objects: unknown[], recursive: boolean) {
+			intersected = objects;
+			expect(recursive).toBe(false);
+			return [{ object: detailMeshes[1], point, uv }];
+		},
+	} as unknown as import("three").Raycaster;
+
+	const hit = m.raycastContentRows(raycaster);
+
+	expect(intersected).toEqual([detailMeshes[1]]);
+	expect(hit).toEqual({
+		row: rows[1],
+		index: 1,
+		mesh: detailMeshes[1],
+		point,
+		uv,
+	});
 });
 
 test("ShelfManager rebuilds detail row meshes when content render window changes and keeps max cap", async () => {

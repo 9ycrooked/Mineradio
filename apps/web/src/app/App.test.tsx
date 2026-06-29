@@ -432,7 +432,7 @@ test("App applies baseline lyric fallback when provider lyric fetch rejects", as
 	const root = createRoot(host);
 	flushSync(() => root.render(<App SplashComponent={() => null} VisualComponent={() => <div id="visual-host" />} createSidecarClient={() => fakeClient} initialRuntimeConfig={rootConfig} />));
 
-	for (let i = 0; i < 8 && !useLyricsStore.getState().payload?.lines.length; i += 1) {
+	for (let i = 0; i < 12 && useLyricsStore.getState().error !== "lyric api failed"; i += 1) {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	}
 
@@ -841,6 +841,15 @@ test("App starts baseline Home private radar from discover songs", async () => {
 	usePlaybackStore.getState().clearQueue();
 
 	const fakeClient = {
+		async resolveSongUrl() {
+			return { url: "https://example.com/rain.mp3", quality: "standard", proxied: true };
+		},
+		audioProxyUrl(url: string) {
+			return url;
+		},
+		async lyric() {
+			return { provider: "netease", trackId: "rain-2", lines: [], hasTranslation: false, isWordByWord: false };
+		},
 		async playlistList() {
 			return [];
 		},

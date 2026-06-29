@@ -17,6 +17,7 @@ export interface SearchShellProps {
 	isResultLiked?: (track: Track) => boolean;
 	isResultLikeBusy?: (track: Track) => boolean;
 	hasCustomCover?: boolean;
+	peek?: boolean;
 }
 
 const HISTORY_CHIPS: Array<{ label: string; mode?: SearchMode; keyword: string }> = [
@@ -95,6 +96,7 @@ export function SearchShell({
 	isResultLiked,
 	isResultLikeBusy,
 	hasCustomCover = false,
+	peek = false,
 }: SearchShellProps): ReactElement {
 	const provider = useSearchStore((s) => s.provider);
 	const keyword = useSearchStore((s) => s.keyword);
@@ -143,7 +145,13 @@ export function SearchShell({
 	);
 
 	useEffect(() => {
-		if (!keyword.trim()) return;
+		if (!keyword.trim()) {
+			searchSeqRef.current += 1;
+			setLoading(false);
+			setResults([]);
+			setError(null);
+			return;
+		}
 		const timer = setTimeout(() => {
 			void runSearch(keyword, modeRef.current);
 		}, 180);
@@ -191,9 +199,10 @@ export function SearchShell({
 	};
 
 	const showResults = results.length > 0 || !!error || loading || keyword.trim().length > 0;
+	const effectivePeek = peek || showResults;
 
 	return (
-		<div id="search-area" className="peek" data-shell="home-search">
+		<div id="search-area" className={effectivePeek ? "peek" : ""} data-shell="home-search">
 			<div id="search-stack">
 				<div id="search-box">
 					<svg id="search-icon" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">

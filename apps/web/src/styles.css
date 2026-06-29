@@ -405,23 +405,6 @@ body.splash-active:not(.splash-revealing) #search-area {
   transition: opacity .72s cubic-bezier(.16, 1, .3, 1), transform .72s cubic-bezier(.16, 1, .3, 1);
 }
 
-body.empty-home-active::before {
-  content: "";
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 36vh;
-  z-index: 2;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 30% 96%, rgba(0, 245, 212, .12), transparent 34%),
-    radial-gradient(circle at 70% 100%, rgba(36, 66, 255, .11), transparent 38%),
-    linear-gradient(180deg, transparent, rgba(0, 0, 0, .18));
-  mix-blend-mode: screen;
-  opacity: .82;
-}
-
 body.empty-home-active #empty-home {
   opacity: 1;
   pointer-events: auto;
@@ -451,7 +434,7 @@ body.immersive-mode #empty-home {
   padding: 28px;
   border-radius: 28px;
   border: 1px solid color-mix(in srgb, var(--home-accent) 22%, rgba(255, 255, 255, .085));
-  background: linear-gradient(145deg, rgba(33, 29, 34, .50), rgba(9, 10, 14, .58) 48%, rgba(17, 20, 25, .52));
+  background: linear-gradient(145deg, rgba(33, 29, 34, .64), rgba(9, 10, 14, .76) 48%, rgba(17, 20, 25, .70));
   box-shadow: 0 28px 90px rgba(0, 0, 0, .34), 0 0 0 1px color-mix(in srgb, var(--home-accent) 7%, transparent), inset 0 1px 0 rgba(255, 255, 255, .065);
   backdrop-filter: blur(30px) saturate(1.16);
   -webkit-backdrop-filter: blur(30px) saturate(1.16);
@@ -682,6 +665,14 @@ body.empty-home-active .home-card:nth-of-type(4) {
   box-shadow: inset 0 0 0 14px rgba(5, 5, 8, .44), 0 12px 28px rgba(0, 0, 0, .26);
 }
 
+.home-card-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .12), transparent 42%, rgba(0, 0, 0, .28));
+  pointer-events: none;
+}
+
 .home-rail {
   align-self: stretch;
   min-height: 0;
@@ -745,7 +736,37 @@ body.empty-home-active .home-card:nth-of-type(4) {
   height: 92px;
   border-radius: 15px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--tone-a) 74%, #16161b), color-mix(in srgb, var(--tone-b) 58%, #08090d));
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .14);
   margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.home-tile-cover:not(.has-cover)::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle, rgba(255, 255, 255, .14) 0 1px, transparent 1px 7px),
+    conic-gradient(from 180deg, var(--tone-a), var(--tone-b), var(--tone-c), var(--tone-a));
+  box-shadow: inset 0 0 0 10px rgba(5, 5, 8, .42);
+}
+
+.home-tile-cover:not(.has-cover)::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 14px;
+  width: 46px;
+  height: 48px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .72) 0 3px, transparent 3px 9px);
+  opacity: .32;
 }
 
 .home-tile-title {

@@ -11,8 +11,10 @@ import {
 	createRenderer,
 	attachRendererResizeSync,
 	createShelfManagerWithThree,
+	createShelfPointerContentRowRaycastHitGetter,
 	createShelfPointerRaycastFocus,
 	createShelfPointerRaycastHitGetter,
+	createShelfPointerStrictRaycastHitGetter,
 	createShelfSelectSoundPlayer,
 	createShelfStep,
 	createStageLyricsLifecycle,
@@ -716,6 +718,14 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				camera: renderer.camera,
 				shelfManager,
 			});
+			const getStrictShelfPointerHit = await createShelfPointerStrictRaycastHitGetter({
+				camera: renderer.camera,
+				shelfManager,
+			});
+			const getStrictShelfDetailRowHit = await createShelfPointerContentRowRaycastHitGetter({
+				camera: renderer.camera,
+				shelfManager,
+			});
 			const shelfPaneWheelSwitcher = createShelfPaneWheelSwitcher({
 				getPane: () => shelfManager.getShelfPane(),
 				getMergeCollections: () => refs.shelfMergeCollectionsRef?.current === true,
@@ -770,6 +780,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				cinema,
 				shelfManager,
 				getHit: getShelfPointerHit,
+				getStrictHit: getStrictShelfPointerHit,
+				getStrictDetailRowHit: getStrictShelfDetailRowHit,
 				getSplashActive: () => refs.splashActiveRef.current,
 				getPortrait: () => window.innerHeight > window.innerWidth,
 				getWallpaperSafe: () => refs.wallpaperSafeRef?.current ?? isWallpaperSafeShelfPreset(refs.fxDefaults?.preset),

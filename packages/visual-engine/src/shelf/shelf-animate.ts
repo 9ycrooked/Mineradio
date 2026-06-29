@@ -91,6 +91,14 @@ export interface ShelfRaycastCardHit {
 	screenPick?: boolean;
 }
 
+export interface ShelfRaycastContentRowHit {
+	row: ShelfContentRow;
+	index: number;
+	mesh: THREE.Mesh;
+	point?: THREE.Vector3;
+	uv?: THREE.Vector2;
+}
+
 export interface ShelfManager {
 	getState(): ShelfState;
 	setData(items: ShelfItem[], opts?: { asyncBuild?: boolean }): void;
@@ -124,6 +132,7 @@ export interface ShelfManager {
 	getSnapshot(): ShelfSnapshot;
 	getRenderedCardCount(): number;
 	raycastCards(raycaster: THREE.Raycaster): ShelfRaycastCardHit | null;
+	raycastContentRows(raycaster: THREE.Raycaster): ShelfRaycastContentRowHit | null;
 	pickCardAtScreen(
 		clientX: number,
 		clientY: number,
@@ -394,6 +403,28 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			}
 			return null;
 		},
+		raycastContentRows(raycaster) {
+			if (!group || !group.visible || !contentList.isOpen() || detailRows.size === 0) return null;
+			const visibleMeshes: THREE.Mesh[] = [];
+			for (const sprite of detailRows.values()) {
+				if (sprite.mesh.visible) visibleMeshes.push(sprite.mesh);
+			}
+			if (visibleMeshes.length === 0) return null;
+			const hits = raycaster.intersectObjects(visibleMeshes, false);
+			const first = hits[0];
+			if (!first) return null;
+			for (const [index, sprite] of detailRows) {
+				if (sprite.mesh !== first.object) continue;
+				return {
+					row: sprite.row,
+					index,
+					mesh: sprite.mesh,
+					point: first.point,
+					uv: first.uv,
+				};
+			}
+			return null;
+		},
 		pickCardAtScreen(clientX, clientY, viewportWidth, viewportHeight, camera, pad) {
 			if (!group || !group.visible || !three || renderedCards.size === 0) return null;
 			if (viewportWidth <= 0 || viewportHeight <= 0) return null;
@@ -601,7 +632,10 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			card.mesh.rotation.set(layout.rotationX, layout.rotationY, 0);
 			card.mesh.scale.setScalar(layout.scale);
 			card.mesh.renderOrder = layout.renderOrder;
-			card.material.opacity = layout.opacity * 0.96 * state.shelfVisibility;
+			const detailOpacity = detailOpen
+				? (state.openCardIdx === index ? 0.16 : 0.08)
+				: 1;
+			card.material.opacity = layout.opacity * 0.96 * state.shelfVisibility * detailOpacity;
 			const color = card.material.color as { setScalar?: (v: number) => void } | undefined;
 			color?.setScalar?.(state.openCardIdx >= 0 && state.openCardIdx !== index ? 0.72 : 1);
 			updateCardSpriteIfNeeded(card, index, ctx);

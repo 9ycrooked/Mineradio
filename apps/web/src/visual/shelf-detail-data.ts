@@ -192,6 +192,28 @@ export function playShelfDetailRow(payload: ShelfDetailRowClickPayload): boolean
 	return true;
 }
 
+function playShelfDetailRows(
+	rows: ShelfContentRow[] | undefined,
+	clickedRow: ShelfContentRow,
+	clickedIndex: number,
+): boolean {
+	if (!rows || rows.length === 0) return false;
+	const playableRows = rows
+		.map((row, sourceIndex) => ({ row, sourceIndex, track: mapShelfDetailRowToTrack(row) }))
+		.filter((entry): entry is { row: ShelfContentRow; sourceIndex: number; track: Track } =>
+			!!entry.track && isPlayable(entry.track.playableState)
+		);
+	if (playableRows.length === 0) return false;
+	const playIndex = playableRows.findIndex(({ row, sourceIndex }) =>
+		sourceIndex === clickedIndex || row === clickedRow
+	);
+	if (playIndex < 0) return false;
+	const playback = usePlaybackStore.getState();
+	playback.setQueue(playableRows.map(({ track }) => track));
+	usePlaybackStore.getState().playAt(playIndex);
+	return true;
+}
+
 export async function handleShelfDetailRowAction(payload: ShelfDetailRowActionPayload): Promise<boolean> {
 	const action = payload.action ?? "row";
 	if (payload.row.type === "podcast-radio") {
@@ -230,6 +252,10 @@ export async function handleShelfDetailRowAction(payload: ShelfDetailRowActionPa
 
 	if (action === "next") {
 		usePlaybackStore.getState().insertNext(track);
+		return true;
+	}
+
+	if ((action === "play" || action === "row") && playShelfDetailRows(payload.rows, payload.row, payload.index)) {
 		return true;
 	}
 

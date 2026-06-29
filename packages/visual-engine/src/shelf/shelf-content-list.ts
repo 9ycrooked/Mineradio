@@ -180,7 +180,7 @@ export interface ShelfContentList {
 	computeRowLayout(rowIndex: number, inputs: ShelfContentRowLayoutInputs): ShelfContentRowLayout;
 	setScreenTargets(targets: ShelfContentScreenTargets): void;
 	clearScreenTargets(): void;
-	pickRowAtScreen(pointer: ShelfContentScreenPoint): ShelfContentScreenRowPick | null;
+	pickRowAtScreen(pointer: ShelfContentScreenPoint, options?: PickShelfContentRowAtScreenOptions): ShelfContentScreenRowPick | null;
 	screenContainsPanel(pointer: ShelfContentScreenPoint): boolean;
 	hasScreenTargetAt(pointer: ShelfContentScreenPoint): boolean;
 	getSnapshot(): ShelfContentSnapshot;
@@ -331,8 +331,8 @@ export function createShelfContentList(opts: ShelfContentListOptions = {}): Shel
 		clearScreenTargets() {
 			clearScreenTargets();
 		},
-		pickRowAtScreen(pointer) {
-			return pickShelfContentRowAtScreen(screenRows, pointer);
+		pickRowAtScreen(pointer, options) {
+			return pickShelfContentRowAtScreen(screenRows, pointer, options);
 		},
 		screenContainsPanel(pointer) {
 			return screenContainsShelfContentPanel(screenPanel, pointer);

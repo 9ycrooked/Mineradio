@@ -56,6 +56,9 @@ function stopPlaybackPatch() {
 }
 
 function findTrackIndex(queue: Track[], track: Track | null): number {
+	if (!track) return -1;
+	const identityIndex = queue.findIndex((item) => item === track);
+	if (identityIndex >= 0) return identityIndex;
 	const ref = trackRef(track);
 	return ref ? queue.findIndex((item) => trackRef(item) === ref) : -1;
 }

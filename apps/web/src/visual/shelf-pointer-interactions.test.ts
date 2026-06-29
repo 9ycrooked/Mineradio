@@ -1719,11 +1719,15 @@ test("attachShelfPointerInteractionWiring does not route like collect or next fr
 	]);
 });
 
-test("attachShelfPointerInteractionWiring ignores open detail click misses without first-level shelf actions", () => {
+test("attachShelfPointerInteractionWiring closes open detail on click miss and scrolls to the return card", () => {
 	const target = new FakePointerTarget();
 	const played: number[] = [];
 	const detailClicks: unknown[] = [];
 	const queriedPointers: Array<{ x: number; y: number }> = [];
+	const closed: unknown[] = [];
+	const focus: unknown[] = [];
+	const pinnedCalls: boolean[] = [];
+	const scrolled: number[] = [];
 	const cleanup = attachShelfPointerInteractionWiring({
 		target,
 		shelfManager: makeShelfManagerMock({
@@ -1733,8 +1737,10 @@ test("attachShelfPointerInteractionWiring ignores open detail click misses witho
 				openCardIdx: 2,
 			}),
 			getCenterIdx: () => 0,
-			scrollBy: () => {},
+			scrollBy: (delta) => scrolled.push(delta),
 			openDetail: () => {},
+			closeDetail: (opts) => closed.push(opts),
+			setShelfPinnedOpen: (open) => pinnedCalls.push(open),
 			hasOpenContent: () => true,
 			getContentList: () => ({
 				pickRowAtScreen: (pointer: { x: number; y: number }) => {
@@ -1743,10 +1749,13 @@ test("attachShelfPointerInteractionWiring ignores open detail click misses witho
 				},
 			}) as never,
 		}),
-		cinema: { setFocusZone: () => {} },
-		getHit: () => makeHit(2, { kind: "playQueue", index: 8 }),
+		cinema: { setFocusZone: (type, opts) => focus.push([type, opts]) },
+		getHit: () => {
+			throw new Error("detail miss return card must use strict raycast only");
+		},
+		getStrictHit: () => makeHit(2, { kind: "playQueue", index: 8 }),
 		getSplashActive: () => false,
-		getPortrait: () => false,
+		getPortrait: () => true,
 		getWallpaperSafe: () => false,
 		getViewportWidth: () => 1200,
 		getViewportHeight: () => 900,
@@ -1761,7 +1770,58 @@ test("attachShelfPointerInteractionWiring ignores open detail click misses witho
 	expect(queriedPointers).toEqual([{ x: 321, y: 240 }]);
 	expect(detailClicks).toEqual([]);
 	expect(played).toEqual([]);
-	expect(event.calls).toEqual([]);
+	expect(closed).toEqual([{ immediate: true }]);
+	expect(pinnedCalls).toEqual([true]);
+	expect(focus).toEqual([["shelf-side", { immediate: true, portrait: true, wallpaperSafe: false }]]);
+	expect(scrolled).toEqual([2]);
+	expect(event.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
+});
+
+test("attachShelfPointerInteractionWiring does not use padded fallback when detail miss strict card raycast misses", () => {
+	const target = new FakePointerTarget();
+	const closed: unknown[] = [];
+	const focus: unknown[] = [];
+	const pinnedCalls: boolean[] = [];
+	const scrolled: number[] = [];
+	const cleanup = attachShelfPointerInteractionWiring({
+		target,
+		shelfManager: makeShelfManagerMock({
+			getMode: () => "stage",
+			getSnapshot: () => ({
+				...closedSnapshot(),
+				openCardIdx: 2,
+			}),
+			getCenterIdx: () => 0,
+			scrollBy: (delta) => scrolled.push(delta),
+			openDetail: () => {},
+			closeDetail: (opts) => closed.push(opts),
+			setShelfPinnedOpen: (open) => pinnedCalls.push(open),
+			hasOpenContent: () => true,
+			getContentList: () => ({
+				pickRowAtScreen: () => null,
+			}) as never,
+		}),
+		cinema: { setFocusZone: (type, opts) => focus.push([type, opts]) },
+		getHit: () => {
+			throw new Error("detail miss must not use screen-space card fallback");
+		},
+		getStrictHit: () => null,
+		getSplashActive: () => false,
+		getPortrait: () => false,
+		getWallpaperSafe: () => true,
+		getViewportWidth: () => 1200,
+		getViewportHeight: () => 900,
+	});
+
+	const event = makeClickEvent({ clientX: 321, clientY: 240 });
+	target.emit("click", event);
+	cleanup();
+
+	expect(closed).toEqual([{ immediate: true }]);
+	expect(pinnedCalls).toEqual([true]);
+	expect(focus).toEqual([["shelf-side", { immediate: true, portrait: false, wallpaperSafe: true }]]);
+	expect(scrolled).toEqual([]);
+	expect(event.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
 });
 
 test("attachShelfPointerInteractionWiring ignores open detail placeholder row clicks", () => {
@@ -2218,6 +2278,109 @@ test("attachShelfPointerInteractionWiring contextmenu closes open detail, pins s
 	expect(focus).toEqual([
 		["shelf-side", { immediate: true, portrait: false, wallpaperSafe: true }],
 	]);
+});
+
+test("attachShelfPointerInteractionWiring contextmenu queues an open detail row next before closing detail", () => {
+	const target = new FakePointerTarget();
+	const detailClicks: unknown[] = [];
+	const closed: unknown[] = [];
+	const pickOptions: unknown[] = [];
+	const row = { id: "song-3", name: "Song 3", artist: "Artist 3" };
+	const cleanup = attachShelfPointerInteractionWiring({
+		target,
+		shelfManager: makeShelfManagerMock({
+			getMode: () => "side",
+			getSnapshot: () => ({
+				...closedSnapshot(),
+				mode: "side" as const,
+				openCardIdx: 2,
+			}),
+			setSelectedIdx: () => {},
+			clearSelected: () => {},
+			getCenterIdx: () => 3,
+			scrollBy: () => {},
+			openDetail: () => {},
+			closeDetail: (opts) => closed.push(opts),
+			getShelfPinnedOpen: () => true,
+			setShelfPinnedOpen: () => {},
+			hasOpenContent: () => true,
+			getContentList: () => ({
+				pickRowAtScreen: (_pointer: unknown, options: unknown) => {
+					pickOptions.push(options);
+					throw new Error("contextmenu next must use strict detail row raycast");
+				},
+			}) as never,
+		}),
+		cinema: { setFocusZone: () => {} },
+		getHit: () => null,
+		getStrictDetailRowHit: () => ({ row, index: 3, uv: { x: 0.5, y: 0.5 } } as never),
+		getSplashActive: () => false,
+		getPortrait: () => false,
+		getWallpaperSafe: () => true,
+		getViewportWidth: () => 1200,
+		getViewportHeight: () => 900,
+		onShelfDetailRowClick: (payload) => detailClicks.push(payload),
+	});
+
+	const event = makeContextMenuEvent({ clientX: 320, clientY: 240 });
+	target.emit("contextmenu", event);
+	cleanup();
+
+	expect(event.calls).toEqual(["preventDefault", "stopPropagation"]);
+	expect(pickOptions).toEqual([]);
+	expect(detailClicks).toEqual([{ row, index: 3, action: "next" }]);
+	expect(closed).toEqual([]);
+});
+
+test("attachShelfPointerInteractionWiring contextmenu treats podcast radio detail rows as a miss", () => {
+	const target = new FakePointerTarget();
+	const detailClicks: unknown[] = [];
+	const closed: unknown[] = [];
+	const pinnedCalls: boolean[] = [];
+	const focus: unknown[] = [];
+	const row = { id: "radio-1", name: "Radio 1", artist: "DJ", type: "podcast-radio" };
+	const cleanup = attachShelfPointerInteractionWiring({
+		target,
+		shelfManager: makeShelfManagerMock({
+			getMode: () => "side",
+			getSnapshot: () => ({
+				...closedSnapshot(),
+				mode: "side" as const,
+				openCardIdx: 2,
+			}),
+			setSelectedIdx: () => {},
+			clearSelected: () => {},
+			getCenterIdx: () => 3,
+			scrollBy: () => {},
+			openDetail: () => {},
+			closeDetail: (opts) => closed.push(opts),
+			getShelfPinnedOpen: () => true,
+			setShelfPinnedOpen: (open) => pinnedCalls.push(open),
+			hasOpenContent: () => true,
+			getContentList: () => ({
+				getRows: () => [row],
+			}) as never,
+		}),
+		cinema: { setFocusZone: (type, opts) => focus.push([type, opts]) },
+		getHit: () => null,
+		getStrictDetailRowHit: () => ({ row, index: 3, uv: { x: 0.5, y: 0.5 } } as never),
+		getSplashActive: () => false,
+		getPortrait: () => false,
+		getWallpaperSafe: () => true,
+		getViewportWidth: () => 1200,
+		getViewportHeight: () => 900,
+		onShelfDetailRowClick: (payload) => detailClicks.push(payload),
+	});
+
+	const event = makeContextMenuEvent({ clientX: 320, clientY: 240 });
+	target.emit("contextmenu", event);
+	cleanup();
+
+	expect(detailClicks).toEqual([]);
+	expect(closed).toEqual([{ immediate: true }]);
+	expect(pinnedCalls).toEqual([true]);
+	expect(focus).toEqual([["shelf-side", { immediate: true, portrait: false, wallpaperSafe: true }]]);
+	expect(event.calls).toEqual(["preventDefault", "stopPropagation"]);
 });
 
 test("attachShelfPointerInteractionWiring ignores first-level wheel over UI, splash, and mode off", () => {

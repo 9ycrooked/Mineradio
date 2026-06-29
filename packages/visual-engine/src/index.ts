@@ -420,6 +420,7 @@ export type {
 	ShelfOpenDetailContentPayload,
 	ShelfSnapshot,
 	ShelfRaycastCardHit,
+	ShelfRaycastContentRowHit,
 	ShelfManager,
 } from "./shelf/shelf-animate";
 export { createShelfSelectSoundPlayer } from "./shelf/shelf-select-sound";
@@ -428,13 +429,21 @@ export type {
 	ShelfSelectSoundPlayerOptions,
 	ShelfSelectSoundVariant,
 } from "./shelf/shelf-select-sound";
-export { createShelfPointerRaycastFocus, createShelfPointerRaycastHitGetter } from "./shelf/shelf-raycast-focus";
+export {
+	createShelfPointerContentRowRaycastHitGetter,
+	createShelfPointerRaycastFocus,
+	createShelfPointerRaycastHitGetter,
+	createShelfPointerStrictRaycastHitGetter,
+} from "./shelf/shelf-raycast-focus";
 export type {
+	ShelfPointerContentRowRaycastHitGetter,
+	ShelfPointerContentRowRaycastHitOptions,
 	ShelfPointerRaycastFocusGetter,
 	ShelfPointerRaycastHitGetter,
 	ShelfPointerRaycastFocusOptions,
 	ShelfPointerRaycastHitOptions,
 	ShelfPointerRaycastInfo,
+	ShelfPointerStrictRaycastHitOptions,
 } from "./shelf/shelf-raycast-focus";
 export {
 	activateShelfPrimaryHit,

@@ -15,7 +15,7 @@ test("EmptyHomeHost renders the baseline empty-home music landing structure", ()
 	expect(html).toContain("每日推荐");
 	expect(html).toContain("推荐歌曲");
 	expect(html).toContain('id="home-tile-row"');
-	expect(html).toContain('class="home-tile-action"');
+	expect(html).not.toContain('class="home-tile-action"');
 });
 
 test("EmptyHomeHost renders baseline logged-out starter tiles", () => {
@@ -110,6 +110,37 @@ test("EmptyHomeHost renders discover songs, playlists, and podcasts into baselin
 	expect(html).toContain("我的歌单");
 	expect(html).toContain("热门播客");
 	expect(html).toContain("刚刚更新 · 点击即可播放");
+});
+
+test("EmptyHomeHost marks real Home card covers with the baseline has-cover class", () => {
+	const html = renderToStaticMarkup(React.createElement(EmptyHomeHost, {
+		discover: {
+			loggedIn: true,
+			user: { provider: "netease", userId: "42", nickname: "tester", avatarUrl: "" },
+			mode: "member",
+			dailySongs: [
+				{ provider: "netease", id: "1", sourceId: "1", title: "第一首", artists: ["A"], album: "", coverUrl: "https://img.example/a.jpg", qualityHints: [], playableState: "playable" },
+				{ provider: "netease", id: "2", sourceId: "2", title: "第二首", artists: ["B"], album: "", coverUrl: "https://img.example/b.jpg", qualityHints: [], playableState: "playable" },
+			],
+			playlists: [{ provider: "netease", id: "p1", name: "我的歌单", coverUrl: "https://img.example/p.jpg", trackCount: 8, trackIds: [], subscribed: false }],
+			podcasts: [],
+			updatedAt: 1782656256000,
+		},
+	}));
+
+	expect(html).toContain('id="home-daily-art"');
+	expect(/class="home-card-art has-cover" id="home-daily-art" style="background-image:url\(&quot;https:\/\/img\.example\/a\.jpg&quot;\)"/.test(html)).toBe(true);
+	expect(/class="home-card-art has-cover" id="home-private-art" style="background-image:url\(&quot;https:\/\/img\.example\/b\.jpg&quot;\)"/.test(html)).toBe(true);
+	expect(/class="home-card-art has-cover" id="home-weather-art" style="background-image:url\(&quot;https:\/\/img\.example\/p\.jpg&quot;\)"/.test(html)).toBe(true);
+});
+
+test("Home CSS keeps baseline cover pseudo-elements without the migration-only bottom mask", async () => {
+	const css = await fetch(new URL("../styles.css", import.meta.url)).then((response) => response.text());
+
+	expect(css).toContain(".home-card-art::after");
+	expect(css).toContain(".home-tile-cover:not(.has-cover)::before");
+	expect(css).toContain(".home-tile-cover:not(.has-cover)::after");
+	expect(css).not.toContain("body.empty-home-active::before");
 });
 
 test("EmptyHomeHost routes the private radio card to the baseline Home private callback", async () => {

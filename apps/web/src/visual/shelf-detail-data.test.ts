@@ -212,6 +212,74 @@ test("playShelfDetailRow enqueues and plays valid rows while ignoring hard non-p
 	expect(usePlaybackStore.getState().currentTrack?.id).toBe("song-1");
 });
 
+test("handleShelfDetailRowAction plays the whole detail list from the clicked playable row", async () => {
+	resetPlaybackStore();
+	const rows = mapPlaylistDetailToShelfRows({
+		...makeDetail(),
+		tracks: [
+			...makeDetail().tracks,
+			{
+				provider: "qq",
+				id: "song-3",
+				sourceId: "song-3",
+				title: "Third Song",
+				artists: ["Carol"],
+				album: "Third Album",
+				coverUrl: "third.jpg",
+				qualityHints: ["standard"],
+				playableState: "playable",
+			},
+		],
+	}, "netease");
+
+	expect(await handleShelfDetailRowAction({ row: rows[2]!, rows, index: 2, action: "play" })).toBe(true);
+	expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(["song-1", "song-3"]);
+	expect(usePlaybackStore.getState().currentTrack?.id).toBe("song-3");
+
+	resetPlaybackStore();
+	expect(await handleShelfDetailRowAction({ row: rows[0]!, rows, index: 0, action: "row" })).toBe(true);
+	expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(["song-1", "song-3"]);
+	expect(usePlaybackStore.getState().currentTrack?.id).toBe("song-1");
+});
+
+test("handleShelfDetailRowAction starts from the clicked duplicate detail row index", async () => {
+	resetPlaybackStore();
+	const rows = mapPlaylistDetailToShelfRows({
+		...makeDetail(),
+		tracks: [
+			{
+				provider: "netease",
+				id: "same-song",
+				sourceId: "same-source",
+				title: "Duplicate Song",
+				artists: ["Alice"],
+				album: "First",
+				coverUrl: "first.jpg",
+				qualityHints: ["standard"],
+				playableState: "playable",
+			},
+			{
+				provider: "netease",
+				id: "same-song",
+				sourceId: "same-source",
+				title: "Duplicate Song",
+				artists: ["Alice"],
+				album: "Second",
+				coverUrl: "second.jpg",
+				qualityHints: ["standard"],
+				playableState: "playable",
+			},
+		],
+	}, "netease");
+
+	expect(await handleShelfDetailRowAction({ row: rows[1]!, rows, index: 1, action: "row" })).toBe(true);
+	expect(usePlaybackStore.getState().queue.map((track) => track.album)).toEqual(["First", "Second"]);
+	expect(usePlaybackStore.getState().currentTrack?.album).toBe("Second");
+	usePlaybackStore.getState().setMode("loop");
+	usePlaybackStore.getState().next();
+	expect(usePlaybackStore.getState().currentTrack?.album).toBe("First");
+});
+
 test("handleShelfDetailRowAction inserts next rows after the current track without interrupting playback", async () => {
 	resetPlaybackStore();
 	const rows = mapPlaylistDetailToShelfRows(makeDetail(), "netease");

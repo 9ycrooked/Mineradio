@@ -3,6 +3,7 @@ import {
 	type CinemaCamera,
 	type ShelfManager,
 	type ShelfContentRow,
+	type ShelfPointerContentRowRaycastHitGetter,
 	type ShelfRaycastCardHit,
 	type ShelfPointerRaycastHitGetter,
 	type ShelfPointerRaycastInfo,
@@ -16,6 +17,7 @@ export interface ShelfPointerInteractionTarget {
 
 export interface ShelfDetailRowClickPayload {
 	row: ShelfContentRow;
+	rows?: ShelfContentRow[];
 	index: number;
 	action?: ShelfDetailRowAction;
 }
@@ -45,6 +47,8 @@ export interface ShelfPointerInteractionOptions {
 	>;
 	cinema: Pick<CinemaCamera, "setFocusZone">;
 	getHit: ShelfPointerRaycastHitGetter;
+	getStrictHit?: ShelfPointerRaycastHitGetter;
+	getStrictDetailRowHit?: ShelfPointerContentRowRaycastHitGetter;
 	getSplashActive: () => boolean;
 	getPortrait: () => boolean;
 	getWallpaperSafe: () => boolean;
@@ -167,6 +171,10 @@ function isShelfDetailPlaceholderRow(row: ShelfContentRow): boolean {
 	return row.kind === "loading" || row.kind === "error" || row.kind === "empty";
 }
 
+function canQueueShelfDetailRowNext(row: ShelfContentRow): boolean {
+	return !isShelfDetailPlaceholderRow(row) && row.type !== "podcast-radio" && Boolean(row.id);
+}
+
 function shelfDetailActionFromUv(
 	pick: { row: ShelfContentRow; index: number; uv?: { x: number; y: number } | null },
 	centerIdx: number,
@@ -205,6 +213,20 @@ export function attachShelfPointerInteractionWiring(
 
 	const isShelfPinnedOpen = (): boolean => {
 		return opts.shelfManager.getShelfPinnedOpen();
+	};
+
+	const focusSide = (): void => {
+		opts.cinema.setFocusZone("shelf-side", {
+			immediate: true,
+			portrait: opts.getPortrait(),
+			wallpaperSafe: opts.getWallpaperSafe(),
+		});
+	};
+
+	const closeDetailToSide = (): void => {
+		opts.shelfManager.closeDetail({ immediate: true });
+		opts.shelfManager.setShelfPinnedOpen(true);
+		focusSide();
 	};
 
 	const isSideAutoPreviewActive = (): boolean => {
@@ -373,12 +395,23 @@ export function attachShelfPointerInteractionWiring(
 			if (!canUseDetailClick(mouseEvent)) return;
 			const contentList = opts.shelfManager.getContentList();
 			const pick = contentList?.pickRowAtScreen?.({ x: mouseEvent.clientX, y: mouseEvent.clientY }) ?? null;
-			if (!pick || isShelfDetailPlaceholderRow(pick.row)) return;
+			if (!pick) {
+				const returnHit = opts.getStrictHit?.(pointerInfoFromEvent(mouseEvent)) ?? null;
+				mouseEvent.preventDefault?.();
+				mouseEvent.stopImmediatePropagation?.();
+				closeDetailToSide();
+				if (canUseHit(returnHit)) {
+					opts.shelfManager.scrollBy(returnHit.index - opts.shelfManager.getCenterIdx());
+				}
+				return;
+			}
+			if (isShelfDetailPlaceholderRow(pick.row)) return;
 			mouseEvent.preventDefault?.();
 			mouseEvent.stopImmediatePropagation?.();
 			opts.onShelfSelectFeedback?.(pick.index - opts.shelfManager.getCenterIdx(), "row");
 			opts.onShelfDetailRowClick?.({
 				row: pick.row,
+				rows: contentList?.getRows?.(),
 				index: pick.index,
 				action: shelfDetailActionFromUv(pick, opts.shelfManager.getCenterIdx()),
 			});
@@ -451,17 +484,19 @@ export function attachShelfPointerInteractionWiring(
 			opts.setShelfMode?.("side");
 			mode = "side";
 		}
-		const focusSide = (): void => {
-			opts.cinema.setFocusZone("shelf-side", {
-				immediate: true,
-				portrait: opts.getPortrait(),
-				wallpaperSafe: opts.getWallpaperSafe(),
-			});
-		};
 		if (opts.shelfManager.getSnapshot().openCardIdx >= 0) {
-			opts.shelfManager.closeDetail({ immediate: true });
-			opts.shelfManager.setShelfPinnedOpen(true);
-			focusSide();
+			const contentList = opts.shelfManager.getContentList();
+			const pick = opts.getStrictDetailRowHit?.(pointerInfoFromEvent(event as MouseEvent)) ?? null;
+			if (pick && canQueueShelfDetailRowNext(pick.row)) {
+				opts.onShelfDetailRowClick?.({
+					row: pick.row,
+					rows: contentList?.getRows?.(),
+					index: pick.index,
+					action: "next",
+				});
+				return;
+			}
+			closeDetailToSide();
 			return;
 		}
 		const nextOpen = !isShelfPinnedOpen();
