@@ -36,6 +36,9 @@ export {
 	createControlGlassSvg,
 	supportsControlGlassSvgFilter,
 	CONTROL_GLASS_FILTER_MARKUP,
+	CONTROL_GLASS_FILTER_DEFS_MARKUP,
+	SEARCH_BOX_GLASS_FILTER_MARKUP,
+	SEARCH_PILL_GLASS_FILTER_MARKUP,
 	CONTROL_GLASS_SVG_ID,
 } from "./control/control-glass-svg";
 export { attachControlGlassNode } from "./control/control-glass-node";

@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import {
 	generateControlGlassDisplacementMap,
+	createControlGlassSvg,
 	CONTROL_GLASS_FILTER_MARKUP,
+	CONTROL_GLASS_FILTER_DEFS_MARKUP,
+	SEARCH_BOX_GLASS_FILTER_MARKUP,
+	SEARCH_PILL_GLASS_FILTER_MARKUP,
 } from "./control-glass-svg";
 
 test("generateControlGlassDisplacementMap(320,80,50) is byte-equal to the baseline recipe in GLASS_SVG_TEXTURE.md", () => {
@@ -65,4 +69,43 @@ test("SVG filter params preserve the golden baseline: 180/170/160 displacement, 
 	expect(CONTROL_GLASS_FILTER_MARKUP).toContain('stdDeviation="0.5"');
 	expect(CONTROL_GLASS_FILTER_MARKUP).toContain('x="-12%" y="-28%" width="124%" height="156%"');
 	expect(CONTROL_GLASS_FILTER_MARKUP).toContain('color-interpolation-filters="sRGB"');
+});
+
+test("search box SVG glass filter mirrors baseline displacement-map params", () => {
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('id="mineradio-search-box-glass-filter"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('x="-24%" y="-34%" width="158%" height="168%"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('id="search-box-glass-map" x="-10%" y="-4%" width="120%" height="108%"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('scale="180"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('scale="170"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('scale="160"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('dx="-90" dy="0"');
+	expect(SEARCH_BOX_GLASS_FILTER_MARKUP).toContain('stdDeviation="0.5"');
+});
+
+test("search pill SVG glass filter mirrors baseline tighter pill params", () => {
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('id="mineradio-search-pill-glass-filter"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('x="-48%" y="-68%" width="210%" height="236%"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('id="search-pill-glass-map" x="-24%" y="-14%" width="148%" height="128%"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('scale="118"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('scale="108"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('scale="100"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('dx="-34" dy="0"');
+	expect(SEARCH_PILL_GLASS_FILTER_MARKUP).toContain('stdDeviation="0.35"');
+});
+
+test("control glass defs include bottom bar, search box, and search pill filters", () => {
+	expect(CONTROL_GLASS_FILTER_DEFS_MARKUP.match(/<filter id=/g)?.length).toBe(3);
+	expect(CONTROL_GLASS_FILTER_DEFS_MARKUP).toContain('id="mineradio-control-glass-filter"');
+	expect(CONTROL_GLASS_FILTER_DEFS_MARKUP).toContain('id="mineradio-search-box-glass-filter"');
+	expect(CONTROL_GLASS_FILTER_DEFS_MARKUP).toContain('id="mineradio-search-pill-glass-filter"');
+});
+
+test("createControlGlassSvg injects all baseline filter nodes", async () => {
+	await import("../runtime/happy-dom-preload");
+	document.body.innerHTML = "";
+	const svg = createControlGlassSvg(document.body);
+	expect(svg.querySelectorAll("filter").length).toBe(3);
+	expect(svg.querySelector("#mineradio-control-glass-filter")).not.toBeNull();
+	expect(svg.querySelector("#mineradio-search-box-glass-filter")).not.toBeNull();
+	expect(svg.querySelector("#mineradio-search-pill-glass-filter")).not.toBeNull();
 });

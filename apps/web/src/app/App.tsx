@@ -54,6 +54,7 @@ import {
   getWindowState,
   listenWindowState,
   listenGlobalHotkey,
+  closeWindow,
   minimizeWindow,
   openProviderLoginWindow,
   showDesktopLyricsWindow,
@@ -742,6 +743,97 @@ export function applyDesktopWindowShellState(state: WindowState): void {
   );
 }
 
+function DesktopTitlebar({
+  maximized,
+  updateSlot,
+  onGuide,
+  onDiy,
+  onMinimize,
+  onToggleMaximize,
+  onClose,
+}: {
+  maximized?: boolean;
+  updateSlot: ReactElement | null;
+  onGuide: () => void;
+  onDiy: () => void;
+  onMinimize: () => void;
+  onToggleMaximize: () => void;
+  onClose: () => void;
+}): ReactElement {
+  return (
+    <div id="desktop-titlebar" aria-label="window controls" data-tauri-drag-region="true">
+      <div className="desktop-drag-region" data-tauri-drag-region="true">
+        <div className="desktop-app-mark" aria-hidden="true" />
+        <div className="desktop-app-title" aria-hidden="true" />
+      </div>
+      <div className="desktop-window-controls">
+        <button
+          id="visual-guide-btn"
+          className="icon-btn"
+          type="button"
+          onClick={onGuide}
+          title="查看使用引导"
+          aria-label="查看使用引导"
+        >
+          ?
+        </button>
+        {updateSlot}
+        <button
+          id="diy-mode-btn"
+          className="desktop-mode-btn"
+          type="button"
+          onClick={onDiy}
+          title="开启 DIY 玩家模式"
+          aria-label="开启 DIY 玩家模式"
+          aria-pressed="false"
+        >
+          DIY
+        </button>
+        <button
+          className="desktop-window-btn"
+          type="button"
+          onClick={onMinimize}
+          title="最小化"
+          aria-label="最小化"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8h10" />
+          </svg>
+        </button>
+        <button
+          className="desktop-window-btn"
+          type="button"
+          onClick={onToggleMaximize}
+          title={maximized ? "还原" : "最大化"}
+          aria-label={maximized ? "还原" : "最大化"}
+        >
+          {maximized ? (
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5 3h8v8" />
+              <path d="M3 5h8v8H3z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+            </svg>
+          )}
+        </button>
+        <button
+          className="desktop-window-btn close"
+          type="button"
+          onClick={onClose}
+          title="关闭"
+          aria-label="关闭"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function shouldUseSecondaryLeftDisplaySeamGuard(
   state: WindowState | null,
 ): boolean {
@@ -988,6 +1080,16 @@ export function App({
     setHomeSuppressed(false);
     setConsole(true);
   }, [setConsole]);
+
+  const toggleDiyMode = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const button = document.getElementById("fx-fab");
+    if (button instanceof HTMLButtonElement) {
+      button.click();
+      return;
+    }
+    showToast("视觉控制台暂不可用");
+  }, [showToast]);
 
   const focusSearch = useCallback(() => {
     if (typeof document === "undefined") return;
@@ -3060,7 +3162,7 @@ export function App({
   ]);
 
   return (
-    <>
+    <div id="desktop-window-shell">
       <input
         ref={fileInputRef}
         type="file"
@@ -3072,6 +3174,24 @@ export function App({
           importLocalFiles(event.currentTarget.files);
           event.currentTarget.value = "";
         }}
+      />
+      <DesktopTitlebar
+        maximized={desktopWindowState?.isMaximized}
+        onGuide={openHomeProductGuide}
+        onDiy={toggleDiyMode}
+        onMinimize={() => void minimizeWindow()}
+        onToggleMaximize={() => void toggleWindowMaximize()}
+        onClose={() => void closeWindow()}
+        updateSlot={
+          <UpdateHost
+            state={updateState}
+            open={updateModalOpen}
+            onOpen={() => setUpdateModalOpen(true)}
+            onClose={() => setUpdateModalOpen(false)}
+            onCheck={() => void refreshUpdateStatus(true)}
+            onInstall={() => void installAvailableUpdate()}
+          />
+        }
       />
       {SHOW_SPLASH && splashActive && (
         <SplashComponent onDismissed={() => setSplashActive(false)} />
@@ -3212,7 +3332,6 @@ export function App({
       <TopRightControls
         onHome={goHome}
         onLogin={openLoginModal}
-        onGuide={openHomeProductGuide}
         onHideCapsule={toggleUserCapsuleAutoHide}
         capsuleAutoHide={userCapsuleAutoHide}
         loggedIn={!!neteaseStatus?.loggedIn || !!qqStatus?.loggedIn}
@@ -3222,18 +3341,6 @@ export function App({
           neteaseStatus?.userId ??
           qqStatus?.userId ??
           undefined
-        }
-        updateSlot={
-          <div id="update-shell">
-            <UpdateHost
-              state={updateState}
-              open={updateModalOpen}
-              onOpen={() => setUpdateModalOpen(true)}
-              onClose={() => setUpdateModalOpen(false)}
-              onCheck={() => void refreshUpdateStatus(true)}
-              onInstall={() => void installAvailableUpdate()}
-            />
-          </div>
         }
       />
       <VisualGuideHost
@@ -3652,6 +3759,6 @@ export function App({
       >
         {toast ?? ""}
       </div>
-    </>
+    </div>
   );
 }

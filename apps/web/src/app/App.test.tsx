@@ -84,19 +84,24 @@ function installAppStubAudio(): () => void {
 
 test("App keeps the empty-home music page mounted behind the splash gate", () => {
 	const html = renderToStaticMarkup(React.createElement(App));
+	const visualGuideButtonCount = html.match(/id="visual-guide-btn"/g)?.length ?? 0;
+	expect(html).toContain('id="desktop-window-shell"');
+	expect(html).toContain('id="desktop-titlebar"');
+	expect(html).toContain('class="desktop-window-controls"');
+	expect(html).toContain('id="diy-mode-btn"');
+	expect(html).toContain('class="desktop-window-btn close"');
 	expect(html).toContain('class="visual-splash-root"');
 	expect(html).toContain('id="visual-host"');
 	expect(html).toContain('id="empty-home"');
 	expect(html).toContain('id="search-area"');
 	expect(html).toContain('id="top-right"');
-	expect(html).toContain('id="visual-guide-btn"');
+	expect(visualGuideButtonCount).toBe(1);
 	expect(html).toContain('id="visual-guide"');
 	expect(html).toContain('id="fx-fab"');
 	expect(html).toContain('id="fx-panel"');
 	expect(html).toContain('id="bottom-handle"');
 	expect(html).toContain('id="bottom-bar"');
 	expect(html).toContain('id="user-btn"');
-	expect(html).toContain('id="update-shell"');
 	expect(html).toContain("🚧此处施工，敬请期待🚧");
 	expect(html).not.toContain('id="home-weather-kicker"');
 	expect(html).toContain("展开播放器控制台");

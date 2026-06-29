@@ -22,6 +22,50 @@ export const CONTROL_GLASS_FILTER_MARKUP = `    <filter id="mineradio-control-gl
       <feGaussianBlur in="output" stdDeviation="0.5"></feGaussianBlur>
     </filter>`;
 
+export const SEARCH_BOX_GLASS_FILTER_MARKUP = `    <filter id="mineradio-search-box-glass-filter" color-interpolation-filters="sRGB" x="-24%" y="-34%" width="158%" height="168%">
+      <feImage id="search-box-glass-map" x="-10%" y="-4%" width="120%" height="108%" preserveAspectRatio="none" result="map"></feImage>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="180" xChannelSelector="R" yChannelSelector="B" result="dispRed"></feDisplacementMap>
+      <feOffset in="dispRed" dx="-90" dy="0" result="dispRedShifted"></feOffset>
+      <feMerge result="dispRedAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispRedShifted"></feMergeNode></feMerge>
+      <feColorMatrix in="dispRedAligned" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"></feColorMatrix>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="170" xChannelSelector="R" yChannelSelector="B" result="dispGreen"></feDisplacementMap>
+      <feOffset in="dispGreen" dx="-90" dy="0" result="dispGreenShifted"></feOffset>
+      <feMerge result="dispGreenAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispGreenShifted"></feMergeNode></feMerge>
+      <feColorMatrix in="dispGreenAligned" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"></feColorMatrix>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="160" xChannelSelector="R" yChannelSelector="B" result="dispBlue"></feDisplacementMap>
+      <feOffset in="dispBlue" dx="-90" dy="0" result="dispBlueShifted"></feOffset>
+      <feMerge result="dispBlueAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispBlueShifted"></feMergeNode></feMerge>
+      <feColorMatrix in="dispBlueAligned" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"></feColorMatrix>
+      <feBlend in="red" in2="green" mode="screen" result="rg"></feBlend>
+      <feBlend in="rg" in2="blue" mode="screen" result="output"></feBlend>
+      <feGaussianBlur in="output" stdDeviation="0.5"></feGaussianBlur>
+    </filter>`;
+
+export const SEARCH_PILL_GLASS_FILTER_MARKUP = `    <filter id="mineradio-search-pill-glass-filter" color-interpolation-filters="sRGB" x="-48%" y="-68%" width="210%" height="236%">
+      <feImage id="search-pill-glass-map" x="-24%" y="-14%" width="148%" height="128%" preserveAspectRatio="none" result="map"></feImage>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="118" xChannelSelector="R" yChannelSelector="B" result="dispRed"></feDisplacementMap>
+      <feOffset in="dispRed" dx="-34" dy="0" result="dispRedShifted"></feOffset>
+      <feMerge result="dispRedAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispRedShifted"></feMergeNode></feMerge>
+      <feColorMatrix in="dispRedAligned" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"></feColorMatrix>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="108" xChannelSelector="R" yChannelSelector="B" result="dispGreen"></feDisplacementMap>
+      <feOffset in="dispGreen" dx="-34" dy="0" result="dispGreenShifted"></feOffset>
+      <feMerge result="dispGreenAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispGreenShifted"></feMergeNode></feMerge>
+      <feColorMatrix in="dispGreenAligned" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"></feColorMatrix>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="100" xChannelSelector="R" yChannelSelector="B" result="dispBlue"></feDisplacementMap>
+      <feOffset in="dispBlue" dx="-34" dy="0" result="dispBlueShifted"></feOffset>
+      <feMerge result="dispBlueAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispBlueShifted"></feMergeNode></feMerge>
+      <feColorMatrix in="dispBlueAligned" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"></feColorMatrix>
+      <feBlend in="red" in2="green" mode="screen" result="rg"></feBlend>
+      <feBlend in="rg" in2="blue" mode="screen" result="output"></feBlend>
+      <feGaussianBlur in="output" stdDeviation="0.35"></feGaussianBlur>
+    </filter>`;
+
+export const CONTROL_GLASS_FILTER_DEFS_MARKUP = [
+	CONTROL_GLASS_FILTER_MARKUP,
+	SEARCH_BOX_GLASS_FILTER_MARKUP,
+	SEARCH_PILL_GLASS_FILTER_MARKUP,
+].join("\n");
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 export const CONTROL_GLASS_SVG_ID = "control-glass-svg";
 
@@ -71,18 +115,20 @@ export function createControlGlassSvg(root: SVGElement | HTMLElement | null): SV
 	svg.setAttribute("aria-hidden", "true");
 	svg.setAttribute("focusable", "false");
 	const defs = document.createElementNS(SVG_NS, "defs");
-	const template = `<svg xmlns="${SVG_NS}">${CONTROL_GLASS_FILTER_MARKUP}</svg>`;
+	const template = `<svg xmlns="${SVG_NS}">${CONTROL_GLASS_FILTER_DEFS_MARKUP}</svg>`;
 	if (typeof DOMParser !== "undefined") {
 		const parsed = new DOMParser().parseFromString(template, "image/svg+xml");
 		const topError = parsed.querySelector("parsererror");
-		const filterEl = topError ? null : (parsed.documentElement.firstElementChild as Element | null);
-		if (filterEl) {
-			defs.appendChild(filterEl);
+		const filterEls = topError ? [] : Array.from(parsed.documentElement.children);
+		if (filterEls.length) {
+			for (const filterEl of filterEls) {
+				defs.appendChild(document.importNode(filterEl, true));
+			}
 		} else {
-			defs.innerHTML = CONTROL_GLASS_FILTER_MARKUP;
+			defs.innerHTML = CONTROL_GLASS_FILTER_DEFS_MARKUP;
 		}
 	} else {
-		defs.innerHTML = CONTROL_GLASS_FILTER_MARKUP;
+		defs.innerHTML = CONTROL_GLASS_FILTER_DEFS_MARKUP;
 	}
 	svg.appendChild(defs);
 	if (root && "appendChild" in root) {
