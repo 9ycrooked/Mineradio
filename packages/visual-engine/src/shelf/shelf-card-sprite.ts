@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { ShelfItem } from "./shelf-animate";
+import { SHELF_SETTINGS } from "./shelf-settings";
 
 export const SHELF_CARD_CANVAS_WIDTH = 720;
 export const SHELF_CARD_CANVAS_HEIGHT = 360;
@@ -13,6 +14,10 @@ export interface ShelfCardDrawState {
 	bgOpacity?: number;
 	beatProgress?: number;
 	dimmed?: boolean;
+}
+
+export interface ShelfCardDrawAssets {
+	coverImage?: CanvasImageSource | null;
 }
 
 export type ShelfCardAction =
@@ -36,8 +41,19 @@ export interface CreateShelfCardMeshOptions {
 	index: number;
 	three: typeof import("three");
 	createCanvas?: () => HTMLCanvasElement;
+	createImage?: () => HTMLImageElement;
 	drawState?: ShelfCardDrawState;
 }
+
+interface ShelfCoverRecord {
+	loaded: boolean;
+	loading: boolean;
+	failed: boolean;
+	img: HTMLImageElement | null;
+	waiters: Array<(img: HTMLImageElement | null) => void>;
+}
+
+const shelfCoverCache = new Map<string, ShelfCoverRecord>();
 
 export function makeShelfCardAction(item: ShelfItem): ShelfCardAction {
 	if (item.type === "podcastCollection") {
@@ -90,6 +106,7 @@ export function createShelfCardMesh(opts: CreateShelfCardMeshOptions): ShelfCard
 	mesh.renderOrder = 50 + opts.index;
 	mesh.userData.shelfCardIndex = opts.index;
 	mesh.userData.action = makeShelfCardAction(opts.item);
+	let disposed = false;
 
 	const sprite: ShelfCardSprite = {
 		canvas,
@@ -99,11 +116,18 @@ export function createShelfCardMesh(opts: CreateShelfCardMeshOptions): ShelfCard
 		material,
 		mesh,
 		update(item, state = { index: opts.index }) {
-			drawShelfCard(context, item, state);
+			const coverImage = item.cover ? getLoadedShelfCover(item.cover) : null;
+			drawShelfCard(context, item, state, { coverImage });
 			texture.needsUpdate = true;
 			mesh.userData.action = makeShelfCardAction(item);
+			if (item.cover && !coverImage) {
+				requestShelfCover(item.cover, opts.createImage, () => {
+					if (!disposed) sprite.update(item, state);
+				});
+			}
 		},
 		dispose() {
+			disposed = true;
 			texture.dispose();
 			material.dispose();
 			geometry.dispose();
@@ -117,15 +141,19 @@ export function drawShelfCard(
 	ctx: CanvasRenderingContext2D,
 	item: ShelfItem,
 	state: ShelfCardDrawState,
+	assets: ShelfCardDrawAssets = {},
 ): void {
 	const w = SHELF_CARD_CANVAS_WIDTH;
 	const h = SHELF_CARD_CANVAS_HEIGHT;
 	const centered = !!state.centered;
 	const selected = !!state.selected;
-	const bgOpacity = state.bgOpacity ?? 0.58;
+	const bgOpacity = state.bgOpacity ?? SHELF_SETTINGS.bgOpacity;
 	const title = item.title || "未命名歌单";
 	const sub = item.sub || (item.type === "queue" ? "播放队列" : "Playlist");
 	const tag = item.tag || defaultTagForItem(item);
+	const accent = SHELF_SETTINGS.accent;
+	const accentRgba = (alpha: number) => hexToRgba(accent, alpha);
+	const isNow = item.type === "queue" && item.tag === "正在播放";
 
 	ctx.clearRect(0, 0, w, h);
 	ctx.save();
@@ -133,32 +161,30 @@ export function drawShelfCard(
 	ctx.fillStyle = `rgba(0,0,0,${bgOpacity})`;
 	ctx.fill();
 
-	const sheen = ctx.createLinearGradient(18, 18, w - 18, h - 18);
-	sheen.addColorStop(0, "rgba(255,255,255,0.18)");
-	sheen.addColorStop(0.42, "rgba(255,255,255,0.045)");
+	const sheen = ctx.createLinearGradient(0, 0, w, h);
+	sheen.addColorStop(0, "rgba(255,255,255,0.10)");
 	sheen.addColorStop(1, "rgba(255,255,255,0.018)");
 	ctx.fillStyle = sheen;
 	ctx.fill();
 
-	ctx.lineWidth = selected || item.type === "queue" ? 4 : 2;
-	ctx.strokeStyle = selected || item.type === "queue"
-		? "rgba(122,240,255,0.82)"
-		: "rgba(255,255,255,0.22)";
+	ctx.lineWidth = isNow ? 2.2 : 1.1;
+	ctx.strokeStyle = isNow ? accentRgba(0.72) : "rgba(255,255,255,0.14)";
 	ctx.stroke();
 
 	if (selected) {
-		ctx.shadowColor = "rgba(122,240,255,0.52)";
-		ctx.shadowBlur = 28;
-		ctx.strokeStyle = "rgba(122,240,255,0.42)";
-		ctx.lineWidth = 9;
+		roundRectPath(ctx, 20, 20, w - 40, h - 40, 32);
+		ctx.shadowColor = accentRgba(0.58);
+		ctx.shadowBlur = 18;
+		ctx.strokeStyle = accentRgba(0.72);
+		ctx.lineWidth = 2.2;
 		ctx.stroke();
 		ctx.shadowBlur = 0;
 	}
 
-	drawCover(ctx, item, centered);
-	drawTextBlock(ctx, tag, title, sub, centered);
-	drawBeatLine(ctx, state.beatProgress ?? 0, selected || item.type === "queue");
-	if (centered) drawCenterActions(ctx, item);
+	drawCover(ctx, item, assets.coverImage ?? null);
+	drawTextBlock(ctx, tag, title, sub, centered, isNow, accentRgba);
+	drawBeatLine(ctx, state.beatProgress ?? 0, isNow, accentRgba);
+	if (centered) drawCenterActions(ctx, item, accent, accentRgba);
 	if (state.dimmed) drawDofOverlay(ctx);
 	ctx.restore();
 }
@@ -196,16 +222,22 @@ function roundRectPath(
 	ctx.lineTo(x, y + r);
 }
 
-function drawCover(ctx: CanvasRenderingContext2D, item: ShelfItem, centered: boolean): void {
-	const x = 56;
-	const y = 82;
-	const size = 198;
+function drawCover(ctx: CanvasRenderingContext2D, item: ShelfItem, image: CanvasImageSource | null): void {
+	const pad = 18;
+	const x = pad + 6;
+	const y = pad + 4;
+	const size = SHELF_CARD_CANVAS_HEIGHT - pad * 2 - 8;
 	roundRectPath(ctx, x, y, size, size, 24);
-	const grad = ctx.createLinearGradient(x, y, x + size, y + size);
-	grad.addColorStop(0, centered ? "rgba(122,240,255,0.44)" : "rgba(255,255,255,0.20)");
-	grad.addColorStop(1, "rgba(255,255,255,0.045)");
-	ctx.fillStyle = grad;
+	ctx.fillStyle = "rgba(255,255,255,0.04)";
 	ctx.fill();
+	if (image) {
+		ctx.save();
+		roundRectPath(ctx, x, y, size, size, 24);
+		ctx.clip();
+		ctx.drawImage(image, x, y, size, size);
+		ctx.restore();
+		return;
+	}
 	ctx.strokeStyle = "rgba(255,255,255,0.18)";
 	ctx.lineWidth = 2;
 	ctx.stroke();
@@ -224,49 +256,74 @@ function drawTextBlock(
 	title: string,
 	sub: string,
 	centered: boolean,
+	isNow: boolean,
+	accentRgba: (alpha: number) => string,
 ): void {
+	const tx = 18 + (SHELF_CARD_CANVAS_HEIGHT - 18 * 2 - 8) + 32;
 	ctx.textAlign = "left";
 	ctx.textBaseline = "alphabetic";
-	ctx.font = "700 24px system-ui, sans-serif";
-	ctx.fillStyle = centered ? "rgba(122,240,255,0.88)" : "rgba(255,255,255,0.62)";
-	ctx.fillText(trimToWidth(ctx, tag, 330), 292, 116);
+	ctx.font = "700 17px Inter, Arial, sans-serif";
+	ctx.fillStyle = isNow ? accentRgba(0.92) : "rgba(255,255,255,0.92)";
+	ctx.fillText(trimToWidth(ctx, tag, 330), tx, 54);
 
-	ctx.font = "800 42px system-ui, sans-serif";
-	ctx.fillStyle = "rgba(255,255,255,0.94)";
-	ctx.fillText(trimToWidth(ctx, title, 360), 292, 176);
+	ctx.font = "700 30px Inter, Arial, sans-serif";
+	ctx.fillStyle = "rgba(255,255,255,0.96)";
+	wrapText(ctx, title, tx, 96, SHELF_CARD_CANVAS_WIDTH - tx - 32, 36, 2);
 
-	ctx.font = "500 25px system-ui, sans-serif";
-	ctx.fillStyle = "rgba(255,255,255,0.58)";
-	ctx.fillText(trimToWidth(ctx, sub, 360), 292, 224);
+	ctx.font = "400 17px Inter, Arial, sans-serif";
+	ctx.fillStyle = "rgba(255,255,255,0.52)";
+	wrapText(ctx, sub, tx, 174, SHELF_CARD_CANVAS_WIDTH - tx - 32, 24, 2);
+	if (centered) {
+		ctx.fillStyle = accentRgba(0.72);
+		ctx.fillText("", tx, 210);
+	}
 }
 
-function drawBeatLine(ctx: CanvasRenderingContext2D, progress: number, accent: boolean): void {
-	const x = 292;
-	const y = 274;
-	const w = 342;
+function drawBeatLine(ctx: CanvasRenderingContext2D, progress: number, isNow: boolean, accentRgba: (alpha: number) => string): void {
+	const x = 18 + (SHELF_CARD_CANVAS_HEIGHT - 18 * 2 - 8) + 32;
+	const y = SHELF_CARD_CANVAS_HEIGHT - 40;
+	const w = Math.min(260, 80 + 320 * clamp01(progress));
 	ctx.lineCap = "round";
-	ctx.lineWidth = 5;
-	ctx.strokeStyle = "rgba(255,255,255,0.14)";
+	ctx.lineWidth = 3.5;
+	ctx.strokeStyle = isNow ? accentRgba(0.90) : "rgba(255,255,255,0.30)";
 	ctx.beginPath();
 	ctx.moveTo(x, y);
 	ctx.lineTo(x + w, y);
 	ctx.stroke();
-	ctx.strokeStyle = accent ? "rgba(122,240,255,0.88)" : "rgba(255,255,255,0.44)";
-	ctx.beginPath();
-	ctx.moveTo(x, y);
-	ctx.lineTo(x + w * clamp01(progress), y);
-	ctx.stroke();
 }
 
-function drawCenterActions(ctx: CanvasRenderingContext2D, item: ShelfItem): void {
-	ctx.font = "700 20px system-ui, sans-serif";
-	ctx.fillStyle = "rgba(255,255,255,0.78)";
+function drawCenterActions(ctx: CanvasRenderingContext2D, item: ShelfItem, accent: string, accentRgba: (alpha: number) => string): void {
+	const tx = 18 + (SHELF_CARD_CANVAS_HEIGHT - 18 * 2 - 8) + 32;
+	const actionY = SHELF_CARD_CANVAS_HEIGHT - 96;
 	if (item.type === "queue") {
-		ctx.fillText("点击播放", 292, 320);
+		ctx.font = '600 14px Inter, "Microsoft YaHei", Arial, sans-serif';
+		ctx.fillStyle = accentRgba(0.84);
+		ctx.fillText("点击播放", tx, actionY + 25);
 		return;
 	}
-	ctx.fillText("▶ 播放歌单", 292, 320);
-	ctx.fillText("详情", 438, 320);
+	roundRectPath(ctx, tx, actionY, 138, 38, 18);
+	const playGrad = ctx.createLinearGradient(tx, actionY, tx + 138, actionY + 38);
+	playGrad.addColorStop(0, "rgba(255,255,255,0.88)");
+	playGrad.addColorStop(0.55, accentRgba(0.94));
+	playGrad.addColorStop(1, accentRgba(0.58));
+	ctx.fillStyle = playGrad;
+	ctx.fill();
+	ctx.strokeStyle = accentRgba(0.44);
+	ctx.lineWidth = 1.1;
+	ctx.stroke();
+	ctx.font = '800 14px Inter, "Microsoft YaHei", Arial, sans-serif';
+	ctx.fillStyle = readableInkForHex(accent);
+	ctx.fillText("▶ 播放歌单", tx + 25, actionY + 24);
+
+	roundRectPath(ctx, tx + 150, actionY, 104, 38, 18);
+	ctx.fillStyle = "rgba(255,255,255,0.055)";
+	ctx.fill();
+	ctx.strokeStyle = "rgba(255,255,255,0.14)";
+	ctx.lineWidth = 1.1;
+	ctx.stroke();
+	ctx.font = '700 14px Inter, "Microsoft YaHei", Arial, sans-serif';
+	ctx.fillStyle = "rgba(255,255,255,0.78)";
+	ctx.fillText("详情", tx + 184, actionY + 24);
 }
 
 function drawDofOverlay(ctx: CanvasRenderingContext2D): void {
@@ -290,8 +347,114 @@ function trimToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: numb
 	return `${next}…`;
 }
 
+function wrapText(
+	ctx: CanvasRenderingContext2D,
+	text: string,
+	x: number,
+	y: number,
+	maxWidth: number,
+	lineHeight: number,
+	maxLines: number,
+): void {
+	const words = String(text || "").split(/\s+/).filter(Boolean);
+	const units = words.length > 1 ? words : Array.from(String(text || ""));
+	let line = "";
+	let lines = 0;
+	for (const unit of units) {
+		const next = line ? `${line}${words.length > 1 ? " " : ""}${unit}` : unit;
+		if (line && ctx.measureText(next).width > maxWidth) {
+			ctx.fillText(trimToWidth(ctx, line, maxWidth), x, y + lines * lineHeight);
+			lines += 1;
+			line = unit;
+			if (lines >= maxLines) return;
+		} else {
+			line = next;
+		}
+	}
+	if (line && lines < maxLines) ctx.fillText(trimToWidth(ctx, line, maxWidth), x, y + lines * lineHeight);
+}
+
 function clamp01(v: number): number {
 	if (v < 0) return 0;
 	if (v > 1) return 1;
 	return v;
+}
+
+function getLoadedShelfCover(url: string): HTMLImageElement | null {
+	const rec = shelfCoverCache.get(url);
+	return rec?.loaded ? rec.img : null;
+}
+
+function requestShelfCover(
+	url: string,
+	createImage: (() => HTMLImageElement) | undefined,
+	cb: (img: HTMLImageElement | null) => void,
+): void {
+	if (!url) {
+		cb(null);
+		return;
+	}
+	const cached = shelfCoverCache.get(url);
+	if (cached?.loaded) {
+		setTimeout(() => cb(cached.img), 0);
+		return;
+	}
+	if (cached?.loading) {
+		cached.waiters.push(cb);
+		return;
+	}
+	if (cached?.failed) {
+		setTimeout(() => cb(null), 0);
+		return;
+	}
+	const img = createImage ? createImage() : createDefaultImage();
+	if (!img) {
+		shelfCoverCache.set(url, { loaded: false, loading: false, failed: true, img: null, waiters: [] });
+		cb(null);
+		return;
+	}
+	const rec: ShelfCoverRecord = { loaded: false, loading: true, failed: false, img: null, waiters: [cb] };
+	shelfCoverCache.set(url, rec);
+	if (!isInlineCoverSrc(url)) img.crossOrigin = "anonymous";
+	img.onload = () => {
+		rec.loaded = true;
+		rec.loading = false;
+		rec.img = img;
+		const waiters = rec.waiters.splice(0);
+		for (const waiter of waiters) setTimeout(() => waiter(img), 0);
+	};
+	img.onerror = () => {
+		rec.loading = false;
+		rec.failed = true;
+		const waiters = rec.waiters.splice(0);
+		for (const waiter of waiters) setTimeout(() => waiter(null), 0);
+	};
+	img.src = url;
+}
+
+function createDefaultImage(): HTMLImageElement | null {
+	if (typeof Image === "undefined") return null;
+	return new Image();
+}
+
+function isInlineCoverSrc(src: string): boolean {
+	return /^data:image\//i.test(src) || /^blob:/i.test(src);
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+	const normalized = hex.replace(/^#/, "");
+	const valid = /^[0-9a-f]{6}$/i.test(normalized) ? normalized : "f4d28a";
+	const n = parseInt(valid, 16);
+	return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${clamp01(alpha)})`;
+}
+
+function readableInkForHex(hex: string): string {
+	const normalized = hex.replace(/^#/, "");
+	const valid = /^[0-9a-f]{6}$/i.test(normalized) ? normalized : "f4d28a";
+	const n = parseInt(valid, 16);
+	const r = (n >> 16) & 255;
+	const g = (n >> 8) & 255;
+	const b = n & 255;
+	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+	return luminance > 0.62 ? "rgba(18,16,12,0.94)" : "rgba(255,255,255,0.94)";
 }

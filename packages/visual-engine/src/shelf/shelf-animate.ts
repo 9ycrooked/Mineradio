@@ -6,7 +6,7 @@ import {
 	SHELF_VISIBLE_RADIUS,
 	computeCardLayout,
 } from "./card-position";
-import { getDefaultShelfLayoutProfile } from "./shelf-layout-profile";
+import { getDefaultShelfLayoutProfile, type ShelfLayoutProfileOverrides } from "./shelf-layout-profile";
 import { computePaneRaw, computeRevealRaw } from "./reveal";
 import {
 	createShelfCardMesh,
@@ -57,6 +57,7 @@ export interface ShelfManagerOptions {
 	three?: typeof import("three") | null;
 	document?: Document | null;
 	now?: () => number;
+	getLayoutProfileOverrides?: () => ShelfLayoutProfileOverrides;
 	onOpenDetailContent?: (payload: ShelfOpenDetailContentPayload) => void;
 }
 
@@ -590,7 +591,7 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 
 	function applyRenderedCardLayout(ctx: FrameContext): void {
 		if (!group || renderedCards.size === 0) return;
-		const profile = getDefaultShelfLayoutProfile();
+		const profile = getDefaultShelfLayoutProfile(opts.getLayoutProfileOverrides?.());
 		const center = state.centerSmooth;
 		const mode = state.mode === "stage" ? "stage" : "side";
 		const detailOpen = state.openCardIdx >= 0;
@@ -725,6 +726,7 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 			item.playlistId || "",
 			item.podcastKey || "",
 			item.queueIndex == null ? "" : item.queueIndex,
+			item.cover || "",
 			drawState.centered ? 1 : 0,
 			drawState.selected ? 1 : 0,
 			drawState.dimmed ? 1 : 0,
@@ -789,7 +791,7 @@ export function createShelfManager(opts: ShelfManagerOptions): ShelfManager {
 	function applyDetailGroupLayout(ctx: FrameContext): void {
 		const targetGroup = ensureDetailGroup();
 		if (!targetGroup) return;
-		const layout = getDefaultShelfLayoutProfile().detail;
+		const layout = getDefaultShelfLayoutProfile(opts.getLayoutProfileOverrides?.()).detail;
 		const snapshot = contentList.getSnapshot();
 		const intro = 1 - smoothstep01(clampRange((ctx.uniforms.uTime.value - snapshot.openAnimAt) / 0.48, 0, 1));
 		const parX = ctx.pointerParallax?.x || 0;
@@ -1174,6 +1176,7 @@ function shelfItemIdentityKey(item: ShelfItem | undefined): string | null {
 		item.playlistId || "",
 		item.podcastKey || "",
 		item.queueIndex == null ? "" : item.queueIndex,
+		item.cover || "",
 		item.title || "",
 	].join("|");
 }

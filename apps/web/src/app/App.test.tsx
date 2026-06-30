@@ -198,10 +198,11 @@ test("App default sidecar client factory stays stable and does not storm health 
 	}
 });
 
-test("desktop shell CSS keeps the rounded shell transparent while the visual host backs the app in black", async () => {
+test("desktop shell CSS keeps the rounded shell transparent while album and WebGL layers mirror baseline", async () => {
 	const css = await fetch(new URL("../styles.css", import.meta.url)).then((response) => response.text());
 	expect(/body\.desktop-shell #desktop-window-shell\s*{[\s\S]*border-radius: 34px;[\s\S]*clip-path: inset\(0 round 34px\);[\s\S]*background: transparent;/.test(css)).toBe(true);
-	expect(/#visual-host\s*{[\s\S]*background: #000;/.test(css)).toBe(true);
+	expect(/#visual-host\s*{[\s\S]*background: transparent;/.test(css)).toBe(true);
+	expect(/#album-bg\s*{[\s\S]*filter: blur\(120px\) brightness\(0\.18\) saturate\(1\.5\);/.test(css)).toBe(true);
 	expect(css).not.toContain("clip-path: inset(0 round 18px);");
 });
 
@@ -376,6 +377,7 @@ test("shouldShowEmptyHome follows baseline force/suppress/playback gates", () =>
 	expect(shouldShowEmptyHome({ ...base, immersiveActive: true })).toBe(false);
 	expect(shouldShowEmptyHome({ ...base, shelfDetailOpen: true })).toBe(false);
 	expect(shouldShowEmptyHome({ ...base, shelfPinnedOpen: true })).toBe(false);
+	expect(shouldShowEmptyHome({ ...base, shelfStageOpen: true })).toBe(false);
 	expect(shouldShowEmptyHome({ ...base, splashActive: true, homeForcedOpen: true })).toBe(false);
 	expect(shouldShowEmptyHome({ ...base, hasCurrentTrack: true, homeForcedOpen: true })).toBe(true);
 });

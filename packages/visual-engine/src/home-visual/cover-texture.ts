@@ -249,10 +249,14 @@ export function createHomeCoverTextureController(
 					markTextureImage(uniforms.uPrevCoverTex.value, uniforms.uCoverTex.value.image as HomeCoverImage);
 				}
 				markTextureImage(uniforms.uCoverTex.value, preparedImage);
-				opts.onCoverPrepared?.(preparedImage);
 				uniforms.uHasCover.value = 1;
 				uniforms.uColorMixT.value = 0;
 				if (uniforms.uLoading) uniforms.uLoading.value = 0;
+				try {
+					opts.onCoverPrepared?.(preparedImage);
+				} catch {
+					// 封面已经进入主纹理；取色/歌词调色失败只能降级，不能阻断粒子封面显示。
+				}
 
 				let heuristicEdgeImage: HomeCoverImage | null = null;
 				try {

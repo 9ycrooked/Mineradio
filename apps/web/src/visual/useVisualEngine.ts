@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
+import * as THREE from "three";
 import {
 	createAudioReactivity,
 	createBeatMapScheduler,
@@ -121,6 +122,8 @@ interface MountedHandles {
 	offFreeCamera: () => void;
 	offCanvasPointer: () => void;
 }
+
+const VISUAL_COVER_RETRY_INTERVAL_MS = 2200;
 
 function prefersReducedMotion(): boolean {
 	if (typeof window === "undefined") return false;
@@ -306,12 +309,29 @@ export function readVisualCurrentTimeSeconds(audio: HTMLAudioElement | null | un
 	return Number.isFinite(fallback) && fallback > 0 ? fallback / 1000 : 0;
 }
 
+export function shouldRetryVisualCoverLoad(input: {
+	coverUrl: string | null | undefined;
+	hasCover: number;
+	nowMs: number;
+	lastAttemptAtMs: number;
+	lastAttemptUrl: string;
+	intervalMs?: number;
+}): boolean {
+	const coverUrl = String(input.coverUrl ?? "").trim();
+	if (!coverUrl) return false;
+	if (Number(input.hasCover) > 0.5) return false;
+	if (coverUrl !== input.lastAttemptUrl) return true;
+	const interval = Math.max(250, input.intervalMs ?? VISUAL_COVER_RETRY_INTERVAL_MS);
+	return input.nowMs - input.lastAttemptAtMs >= interval;
+}
+
 function attachBaselineCanvasPointerInput(input: {
 	target: HTMLElement;
 	windowTarget: Window;
 	homeVisual: HomeVisual;
 	cinema: CinemaCamera;
 	freeCamera: ReturnType<typeof createDefaultFreeCameraState>;
+	camera: THREE.PerspectiveCamera;
 	pointerTarget: { x: number; y: number };
 	isPointerOverUi: (event: MouseEvent | WheelEvent) => boolean;
 }): () => void {
@@ -319,6 +339,44 @@ function attachBaselineCanvasPointerInput(input: {
 	let lastX = 0;
 	let lastY = 0;
 	let lastT = 0;
+	const pointerNdc = new THREE.Vector2();
+	const raycaster = new THREE.Raycaster();
+	const plane = new THREE.Plane();
+	const planePoint = new THREE.Vector3();
+	const planeNormal = new THREE.Vector3();
+	const worldHit = new THREE.Vector3();
+	const localHit = new THREE.Vector3();
+	const worldQuat = new THREE.Quaternion();
+
+	const particleLocalPointFromNdc = (ndcX: number, ndcY: number): { x: number; y: number } | null => {
+		pointerNdc.set(ndcX, ndcY);
+		raycaster.setFromCamera(pointerNdc, input.camera);
+		const points = input.homeVisual.getField().points as unknown as THREE.Points;
+		if (points) {
+			points.updateMatrixWorld(true);
+			points.getWorldPosition(planePoint);
+			points.getWorldQuaternion(worldQuat);
+			planeNormal.set(0, 0, 1).applyQuaternion(worldQuat).normalize();
+			if (Math.abs(planeNormal.dot(raycaster.ray.direction)) >= 0.16) {
+				plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+				if (raycaster.ray.intersectPlane(plane, worldHit)) {
+					localHit.copy(worldHit);
+					points.worldToLocal(localHit);
+					if (Number.isFinite(localHit.x) && Number.isFinite(localHit.y) && Math.abs(localHit.x) < 8.5 && Math.abs(localHit.y) < 8.5) {
+						return { x: localHit.x, y: localHit.y };
+					}
+				}
+			}
+		}
+		planeNormal.set(0, 0, 1);
+		plane.set(planeNormal, 0);
+		if (raycaster.ray.intersectPlane(plane, worldHit)) {
+			if (Number.isFinite(worldHit.x) && Number.isFinite(worldHit.y) && Math.abs(worldHit.x) < 8.5 && Math.abs(worldHit.y) < 8.5) {
+				return { x: worldHit.x, y: worldHit.y };
+			}
+		}
+		return null;
+	};
 
 	const updatePointerTarget = (clientX: number, clientY: number) => {
 		const width = Math.max(1, input.windowTarget.innerWidth || input.target.clientWidth || 1);
@@ -328,8 +386,14 @@ function attachBaselineCanvasPointerInput(input: {
 		input.pointerTarget.x = ndcX;
 		input.pointerTarget.y = ndcY;
 		const fx = input.homeVisual.getFx();
-		fx.mouseActive = true;
-		fx.mouseXy = { x: ndcX * 2.4, y: ndcY * 2.4 };
+		const local = particleLocalPointFromNdc(ndcX, ndcY);
+		if (local) {
+			fx.mouseActive = true;
+			fx.mouseXy = local;
+		} else {
+			fx.mouseActive = false;
+			fx.mouseXy = { x: -999, y: -999 };
+		}
 	};
 
 	const clearPointer = () => {
@@ -814,7 +878,14 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				if (uniforms.uPixel) uniforms.uPixel.value = pixelRatio;
 			};
 			syncHomeVisualPixelRatio();
-			homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
+			let lastCoverLoadAttemptUrl = refs.coverUrlRef?.current ?? "";
+			let lastCoverLoadAttemptAt = performance.now();
+			const requestHomeVisualCover = (coverUrl: string, nowMs = performance.now()) => {
+				lastCoverLoadAttemptUrl = coverUrl;
+				lastCoverLoadAttemptAt = nowMs;
+				homeVisual.setCoverUrl(coverUrl);
+			};
+			requestHomeVisualCover(lastCoverLoadAttemptUrl, lastCoverLoadAttemptAt);
 			if (cancelled || disposedRef.current) {
 				homeVisual.dispose();
 				audioEngine.dispose();
@@ -827,6 +898,17 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			const shelfManager = await createShelfManagerWithThree({
 				scene: renderer.scene,
 				document,
+				getLayoutProfileOverrides: () => {
+					const width = window.innerWidth || host.clientWidth || 0;
+					const height = window.innerHeight || host.clientHeight || 0;
+					const portrait = height > width * 1.08;
+					const fx = mergeFxState(mergeFxState(cloneFxState(), refs.fxDefaults), refs.fxRef?.current);
+					return {
+						portrait,
+						narrow: !portrait && width > 0 && width < 980,
+						skullSafe: Number(fx.preset) === 6,
+					};
+				},
 				onOpenDetailContent: (payload) => {
 					const contentList = shelfManagerForCallback?.getContentList();
 					if (contentList) {
@@ -895,6 +977,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				},
 				skullMouthTransformSupplier: () => homeVisual.getSkullMouthTransform(),
 				skullBeatFlashSupplier: () => homeVisual.getSkullBeatFlash(),
+				getBeatCamKick: () => cinema.getState().beatCam,
 				coverWorldTransformSupplier: () => {
 					const points = homeVisual.getField().points;
 					return {
@@ -975,9 +1058,19 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			const offHome = renderLoop.registerStep(RenderStepSlot.HomeVisual, (ctx) => {
 				mergeFxState(homeVisual.getFx(), refs.fxRef?.current);
 				syncHomeVisualPixelRatio();
+				const uniforms = homeVisual.getField().materialUniforms as Record<string, { value: unknown }>;
+				const currentCoverUrl = refs.coverUrlRef?.current ?? "";
 				if (refs.coverUrlVersionRef && syncedCoverUrlVersion !== refs.coverUrlVersionRef.current) {
 					syncedCoverUrlVersion = refs.coverUrlVersionRef.current;
-					homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
+					requestHomeVisualCover(currentCoverUrl, ctx.now);
+				} else if (shouldRetryVisualCoverLoad({
+					coverUrl: currentCoverUrl,
+					hasCover: Number(uniforms.uHasCover?.value ?? 0),
+					nowMs: ctx.now,
+					lastAttemptAtMs: lastCoverLoadAttemptAt,
+					lastAttemptUrl: lastCoverLoadAttemptUrl,
+				})) {
+					requestHomeVisualCover(currentCoverUrl, ctx.now);
 				}
 				applyStageLyricPalette();
 				const homeActive = refs.homeActiveRef?.current === true;
@@ -1005,7 +1098,6 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				}
 				homeVisualPreviousPreset = preset.previousPreset;
 				homeVisualPreviewActive = homeActive;
-				const uniforms = homeVisual.getField().materialUniforms as Record<string, { value: unknown }>;
 				if (homeVisualPreviewActive) {
 					if (typeof uniforms.uAlpha?.value === "number" && uniforms.uAlpha.value < 0.96) {
 						uniforms.uAlpha.value = 0.96;
@@ -1209,6 +1301,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				homeVisual,
 				cinema,
 				freeCamera,
+				camera: renderer.camera,
 				pointerTarget,
 				isPointerOverUi: isPointerOverRuntimeUi,
 			});

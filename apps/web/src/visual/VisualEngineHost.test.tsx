@@ -12,7 +12,9 @@ import {
 	syncDesktopLyricsMotionRef,
 	createStageLyricsHostSuppliers,
 	mapLyricPayload,
+	mapShelfItemCoversForSidecar,
 	countShelfPanePlaylists,
+	coverUrlToCssBackgroundImage,
 	VisualEngineHost,
 	type DesktopLyricsMotionSnapshot,
 } from "./VisualEngineHost";
@@ -28,12 +30,41 @@ test("VisualEngineHost server-renders a visual-host placeholder div without invo
 		}),
 	);
 	expect(html).toContain('id="visual-host"');
+	expect(html).toContain('id="album-bg"');
 	expect(html).not.toContain("canvas");
+});
+
+test("VisualEngineHost restores baseline album background layer from the direct cover URL", () => {
+	const html = renderToStaticMarkup(
+		React.createElement(VisualEngineHost, {
+			audioElementRef: { current: null },
+			controllerRef: { current: null },
+			lyricsPayload: null,
+			positionMs: 0,
+			isPlaying: false,
+			currentCoverUrl: "https://img.example/a.jpg",
+			sidecarBaseUrl: "http://127.0.0.1:4111",
+		}),
+	);
+	expect(html).toContain('id="album-bg"');
+	expect(html).toContain('class="visible"');
+	// Baseline `loadCoverFromUrl` sets `#album-bg.style.backgroundImage = "url(" + directUrl + ")"`
+	// using the direct cover URL (CSS images do not need CORS). The WebGL cover
+	// texture separately goes through the sidecar image proxy for crossOrigin.
+	expect(html).toContain("https://img.example/a.jpg");
+	expect(html).not.toContain("image-proxy");
 });
 
 test("visual host keeps the WebGL canvas hit-testable for baseline stage drag and wheel controls", async () => {
 	const css = await fetch(new URL("../styles.css", import.meta.url)).then((res) => res.text());
 	expect(/#visual-host\s*\{[\s\S]*pointer-events:\s*auto;/.test(css)).toBe(true);
+});
+
+test("album background CSS matches the Electron baseline cover glow layer", async () => {
+	const css = await fetch(new URL("../styles.css", import.meta.url)).then((res) => res.text());
+	expect(/#visual-host\s*\{[\s\S]*z-index:\s*1;[\s\S]*background:\s*transparent;/.test(css)).toBe(true);
+	expect(/#album-bg\s*\{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*0;[\s\S]*filter:\s*blur\(120px\) brightness\(0\.18\) saturate\(1\.5\);[\s\S]*transform:\s*scale\(1\.4\);[\s\S]*transition:\s*background-image 1\.5s ease, opacity 1\.5s ease;/.test(css)).toBe(true);
+	expect(/#visual-host canvas\s*\{[\s\S]*z-index:\s*1;/.test(css)).toBe(true);
 });
 
 test("resolveRuntimeShelfMode keeps runtime side promotion across default off rerenders", () => {
@@ -91,6 +122,12 @@ test("resolveVisualCoverUrl prefers explicit currentCoverUrl and falls back to c
 	expect(resolveVisualCoverUrl(null, null)).toBe("");
 });
 
+test("coverUrlToCssBackgroundImage preserves quoted baseline url syntax safely", () => {
+	expect(coverUrlToCssBackgroundImage("https://img.example/a.jpg")).toBe('url("https://img.example/a.jpg")');
+	expect(coverUrlToCssBackgroundImage('https://img.example/a"b.jpg')).toBe('url("https://img.example/a\\"b.jpg")');
+	expect(coverUrlToCssBackgroundImage("")).toBe(undefined);
+});
+
 test("resolveVisualCoverUrlForSidecar proxies remote covers through sidecar and preserves inline sources", () => {
 	expect(resolveVisualCoverUrlForSidecar("https://img.example/a.jpg", "http://127.0.0.1:4111")).toBe("http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg");
 	expect(resolveVisualCoverUrlForSidecar("//p3.music.126.net/cover.jpg", "http://127.0.0.1:4111")).toBe("http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fp3.music.126.net%2Fcover.jpg");
@@ -136,6 +173,46 @@ test("mapLyricPayload preserves native karaoke timing for stage lyrics", () => {
 				{ text: "好", t: 1.5, d: 0.5, c0: 1, c1: 2 },
 			],
 		},
+	]);
+});
+
+test("mapLyricPayload sorts stage lyrics and native words like the Electron baseline parser", () => {
+	const lines = mapLyricPayload({
+		provider: "netease",
+		trackId: "42",
+		hasTranslation: false,
+		isWordByWord: true,
+		lines: [
+			{
+				timeMs: 2000,
+				text: "C",
+				words: [{ text: "later", timeMs: 2200, c0: 0, c1: 1 }],
+			},
+			{
+				timeMs: 0,
+				text: "A",
+				words: [
+					{ text: "second", timeMs: 500, c0: 1, c1: 2 },
+					{ text: "first", timeMs: 0, c0: 0, c1: 1 },
+				],
+			},
+			{ timeMs: 1000, text: "B" },
+		],
+	});
+
+	expect(lines.map((line) => line.text)).toEqual(["A", "B", "C"]);
+	expect(lines[0].words?.map((word) => word.text)).toEqual(["first", "second"]);
+});
+
+test("mapShelfItemCoversForSidecar proxies playlist covers for canvas shelf textures", () => {
+	expect(mapShelfItemCoversForSidecar([
+		{ type: "playlist", title: "A", cover: "https://img.example/a.jpg" },
+		{ type: "queue", title: "B", cover: "data:image/png;base64,abc" },
+		{ type: "queue", title: "C" },
+	], "http://127.0.0.1:4111")).toEqual([
+		{ type: "playlist", title: "A", cover: "http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg" },
+		{ type: "queue", title: "B", cover: "data:image/png;base64,abc" },
+		{ type: "queue", title: "C" },
 	]);
 });
 

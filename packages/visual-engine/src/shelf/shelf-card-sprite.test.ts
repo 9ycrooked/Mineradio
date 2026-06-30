@@ -55,6 +55,9 @@ function makeCanvasLike() {
 					fillText() {
 						calls.push("fillText");
 					},
+					drawImage() {
+						calls.push("drawImage");
+					},
 				};
 			},
 		},
@@ -174,4 +177,63 @@ test("makeShelfCardAction maps baseline podcast collection and queue card action
 		kind: "playQueue",
 		index: 4,
 	});
+});
+
+test("createShelfCardMesh redraws with the loaded cover image like baseline drawCard", async () => {
+	const made = makeCanvasLike();
+	class FakePlaneGeometry {
+		constructor(public width: number, public height: number) {}
+		dispose() {}
+	}
+	class FakeCanvasTexture {
+		needsUpdate = false;
+		minFilter: unknown = null;
+		magFilter: unknown = null;
+		generateMipmaps = true;
+		constructor(public canvas: unknown) {}
+		dispose() {}
+	}
+	class FakeMaterial {
+		color = { setScalar() {} };
+		constructor(init: Record<string, unknown>) {
+			Object.assign(this, init);
+		}
+		dispose() {}
+	}
+	class FakeMesh {
+		renderOrder = 0;
+		userData: Record<string, unknown> = {};
+		position = { set() {} };
+		rotation = { set() {} };
+		scale = { setScalar() {} };
+		visible = true;
+		constructor(public geometry: unknown, public material: unknown) {}
+	}
+	const three = {
+		PlaneGeometry: FakePlaneGeometry,
+		CanvasTexture: FakeCanvasTexture,
+		MeshBasicMaterial: FakeMaterial,
+		Mesh: FakeMesh,
+		LinearFilter: "LinearFilter",
+		DoubleSide: "DoubleSide",
+	} as unknown as typeof import("three");
+	const image = {
+		crossOrigin: "",
+		onload: null as null | (() => void),
+		onerror: null as null | (() => void),
+		src: "",
+	} as unknown as HTMLImageElement;
+	const card = createShelfCardMesh({
+		item: { type: "playlist", title: "Playlist", cover: "https://img.example/cover.jpg" },
+		index: 0,
+		three,
+		createCanvas: () => made.canvas as unknown as HTMLCanvasElement,
+		createImage: () => image,
+	});
+
+	expect(made.calls).not.toContain("drawImage");
+	(image as unknown as { onload: () => void }).onload();
+	await new Promise((resolve) => setTimeout(resolve, 5));
+	expect(made.calls).toContain("drawImage");
+	expect(card.texture.needsUpdate).toBe(true);
 });

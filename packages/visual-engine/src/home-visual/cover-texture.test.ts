@@ -65,6 +65,26 @@ test("setCoverUrl(url) loads the current cover image, marks texture dirty, and s
 	expect(uniforms.uLoading.value).toBe(0);
 });
 
+test("setCoverUrl(url) keeps the cover visible when cover-dependent color work throws", async () => {
+	const uniforms = makeUniforms();
+	const ctl = createHomeCoverTextureController({
+		uniforms: uniforms as never,
+		loadImage: async (url) => ({ width: 128, height: 128, src: url }),
+		onCoverPrepared: () => {
+			throw new Error("palette failed");
+		},
+	});
+
+	ctl.setCoverUrl("https://img.example/a.jpg");
+	await ctl.whenIdle();
+
+	expect(uniforms.uCoverTex.value.image).toEqual({ width: 128, height: 128, src: "https://img.example/a.jpg" });
+	expect(uniforms.uCoverTex.value.needsUpdate).toBe(true);
+	expect(uniforms.uHasCover.value).toBe(1);
+	expect(uniforms.uColorMixT.value).toBe(0);
+	expect(uniforms.uLoading.value).toBe(0);
+});
+
 test("setCoverUrl(data:image) accepts inline custom cover sources instead of clearing", async () => {
 	const uniforms = makeUniforms();
 	const loaded: string[] = [];

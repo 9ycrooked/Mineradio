@@ -3,6 +3,7 @@ export interface LyricWord {
 	d?: number;
 	c0: number;
 	c1: number;
+	text?: string;
 }
 
 export interface LyricLine {

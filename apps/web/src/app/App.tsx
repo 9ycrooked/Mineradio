@@ -690,6 +690,7 @@ export interface EmptyHomeStateInput {
   immersiveActive?: boolean;
   shelfDetailOpen?: boolean;
   shelfPinnedOpen?: boolean;
+  shelfStageOpen?: boolean;
 }
 
 export function shouldShowEmptyHome(input: EmptyHomeStateInput): boolean {
@@ -699,6 +700,7 @@ export function shouldShowEmptyHome(input: EmptyHomeStateInput): boolean {
   if (input.immersiveActive) return false;
   if (input.shelfDetailOpen) return false;
   if (input.shelfPinnedOpen) return false;
+  if (input.shelfStageOpen) return false;
   if (input.hasCurrentTrack) return false;
   if (input.queueLength > 0) return false;
   if (input.isPlaying) return false;
@@ -1076,6 +1078,7 @@ export function App({
     isPlaying,
     shelfDetailOpen,
     shelfPinnedOpen: shelfOpen,
+    shelfStageOpen: shelfMode === "stage",
   });
   const emptyHomeActive = shouldShowEmptyHome({
     splashActive,
@@ -1086,6 +1089,7 @@ export function App({
     isPlaying,
     shelfDetailOpen,
     shelfPinnedOpen: shelfOpen,
+    shelfStageOpen: shelfMode === "stage",
   });
   const homeControlsLocked =
     emptyHomeActive &&

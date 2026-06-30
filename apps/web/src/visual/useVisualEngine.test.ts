@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createStageLyricsHostSuppliers, createStageLyricsShelfSuppliers, isRuntimeShelfPreviewActive, lyricPaletteFromHex, readVisualCurrentTimeSeconds, resolveHomeVisualPreset, resolveRuntimeWallpaperSafe, resolveSkullMouthLyricsActive, resolveSkullShelfCompositionActive, resolveStageLyricLayoutOptions, resolveStageLyricPalette, shouldDimWallpaperParticlesForShelf, setRuntimeShelfMode } from "./useVisualEngine";
+import { createStageLyricsHostSuppliers, createStageLyricsShelfSuppliers, isRuntimeShelfPreviewActive, lyricPaletteFromHex, readVisualCurrentTimeSeconds, resolveHomeVisualPreset, resolveRuntimeWallpaperSafe, resolveSkullMouthLyricsActive, resolveSkullShelfCompositionActive, resolveStageLyricLayoutOptions, resolveStageLyricPalette, shouldDimWallpaperParticlesForShelf, shouldRetryVisualCoverLoad, setRuntimeShelfMode } from "./useVisualEngine";
 
 test("isRuntimeShelfPreviewActive follows side-auto shelf visibility readiness", () => {
 	expect(isRuntimeShelfPreviewActive("auto", 0.17)).toBe(true);
@@ -99,6 +99,46 @@ test("readVisualCurrentTimeSeconds prefers frame-accurate audio time over React 
 	expect(readVisualCurrentTimeSeconds({ currentTime: 12.345 } as HTMLAudioElement, 10_000)).toBe(12.345);
 	expect(readVisualCurrentTimeSeconds({ currentTime: NaN } as HTMLAudioElement, 10_000)).toBe(10);
 	expect(readVisualCurrentTimeSeconds(null, 0)).toBe(0);
+});
+
+test("shouldRetryVisualCoverLoad retries failed cover loads after sidecar recovery without spamming successful textures", () => {
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "",
+		hasCover: 0,
+		nowMs: 5000,
+		lastAttemptAtMs: 0,
+		lastAttemptUrl: "",
+	})).toBe(false);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg",
+		hasCover: 1,
+		nowMs: 5000,
+		lastAttemptAtMs: 0,
+		lastAttemptUrl: "http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg",
+	})).toBe(false);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "next.jpg",
+		hasCover: 0,
+		nowMs: 200,
+		lastAttemptAtMs: 100,
+		lastAttemptUrl: "prev.jpg",
+	})).toBe(true);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "same.jpg",
+		hasCover: 0,
+		nowMs: 2000,
+		lastAttemptAtMs: 1000,
+		lastAttemptUrl: "same.jpg",
+		intervalMs: 2200,
+	})).toBe(false);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "same.jpg",
+		hasCover: 0,
+		nowMs: 3300,
+		lastAttemptAtMs: 1000,
+		lastAttemptUrl: "same.jpg",
+		intervalMs: 2200,
+	})).toBe(true);
 });
 
 test("resolveHomeVisualPreset applies baseline idle wallpaper preset and restores previous preset", () => {
