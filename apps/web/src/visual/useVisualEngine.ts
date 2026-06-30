@@ -789,6 +789,23 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 						position: points.position,
 						quaternion: points.quaternion,
 						updateMatrixWorld: (force?: boolean) => points.updateMatrixWorld(force),
+						getWorldPosition: (target: { x: number; y: number; z: number }) => {
+							const worldPosition = points.position.clone();
+							points.getWorldPosition(worldPosition);
+							target.x = worldPosition.x;
+							target.y = worldPosition.y;
+							target.z = worldPosition.z;
+							return target;
+						},
+						getWorldQuaternion: (target: { x: number; y: number; z: number; w: number }) => {
+							const worldQuaternion = points.quaternion.clone();
+							points.getWorldQuaternion(worldQuaternion);
+							target.x = worldQuaternion.x;
+							target.y = worldQuaternion.y;
+							target.z = worldQuaternion.z;
+							target.w = worldQuaternion.w;
+							return target;
+						},
 					};
 				},
 				cameraSupplier: () => renderer.camera,
