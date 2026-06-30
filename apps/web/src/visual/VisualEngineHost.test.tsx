@@ -30,6 +30,11 @@ test("VisualEngineHost server-renders a visual-host placeholder div without invo
 	expect(html).not.toContain("canvas");
 });
 
+test("visual host keeps the WebGL canvas hit-testable for baseline stage drag and wheel controls", async () => {
+	const css = await fetch(new URL("../styles.css", import.meta.url)).then((res) => res.text());
+	expect(/#visual-host\s*\{[\s\S]*pointer-events:\s*auto;/.test(css)).toBe(true);
+});
+
 test("resolveRuntimeShelfMode keeps runtime side promotion across default off rerenders", () => {
 	expect(resolveRuntimeShelfMode("off", "side")).toBe("side");
 	expect(resolveRuntimeShelfMode("off", null)).toBe("off");

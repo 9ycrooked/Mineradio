@@ -801,6 +801,12 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			let homeVisualPreviousPreset: number | null = null;
 			let homeVisualPreviewActive = false;
 			let syncedCoverUrlVersion = refs.coverUrlVersionRef?.current ?? 0;
+			const syncHomeVisualPixelRatio = () => {
+				const pixelRatio = renderer.renderer.getPixelRatio?.() ?? 1;
+				const uniforms = homeVisual.getField().materialUniforms;
+				if (uniforms.uPixel) uniforms.uPixel.value = pixelRatio;
+			};
+			syncHomeVisualPixelRatio();
 			homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
 			if (cancelled || disposedRef.current) {
 				homeVisual.dispose();
@@ -961,6 +967,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			});
 			const offHome = renderLoop.registerStep(RenderStepSlot.HomeVisual, (ctx) => {
 				mergeFxState(homeVisual.getFx(), refs.fxRef?.current);
+				syncHomeVisualPixelRatio();
 				if (refs.coverUrlVersionRef && syncedCoverUrlVersion !== refs.coverUrlVersionRef.current) {
 					syncedCoverUrlVersion = refs.coverUrlVersionRef.current;
 					homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
