@@ -2,6 +2,7 @@ mod commands;
 mod paths;
 mod sidecar;
 mod updater;
+mod db;
 
 use std::{
     path::PathBuf,
