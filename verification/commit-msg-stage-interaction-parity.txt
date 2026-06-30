@@ -1,0 +1,8 @@
+fix(web): restore stage interaction parity
+
+Restore baseline canvas pointer handling for the visual stage, including cover
+particle spin, wheel orbit radius, live pointer parallax for the shelf, and
+cover image blob fallback loading.
+
+Keep the bottom player console visible while hovered in the lyric stage by
+bridging the latest hover state into the imperative motion host.

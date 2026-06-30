@@ -119,6 +119,7 @@ interface MountedHandles {
 	offShelfFocus: () => void;
 	offShelfPointerInteractions: () => void;
 	offFreeCamera: () => void;
+	offCanvasPointer: () => void;
 }
 
 function prefersReducedMotion(): boolean {
@@ -295,6 +296,100 @@ function makeFallbackFrameSource(): AudioFrameSource {
 			playing: false,
 			currentTimeSeconds: 0,
 		};
+	};
+}
+
+function attachBaselineCanvasPointerInput(input: {
+	target: HTMLElement;
+	windowTarget: Window;
+	homeVisual: HomeVisual;
+	cinema: CinemaCamera;
+	freeCamera: ReturnType<typeof createDefaultFreeCameraState>;
+	pointerTarget: { x: number; y: number };
+	isPointerOverUi: (event: MouseEvent | WheelEvent) => boolean;
+}): () => void {
+	let rotating = false;
+	let lastX = 0;
+	let lastY = 0;
+	let lastT = 0;
+
+	const updatePointerTarget = (clientX: number, clientY: number) => {
+		const width = Math.max(1, input.windowTarget.innerWidth || input.target.clientWidth || 1);
+		const height = Math.max(1, input.windowTarget.innerHeight || input.target.clientHeight || 1);
+		const ndcX = (clientX / width) * 2 - 1;
+		const ndcY = -(clientY / height) * 2 + 1;
+		input.pointerTarget.x = ndcX;
+		input.pointerTarget.y = ndcY;
+		const fx = input.homeVisual.getFx();
+		fx.mouseActive = true;
+		fx.mouseXy = { x: ndcX * 2.4, y: ndcY * 2.4 };
+	};
+
+	const clearPointer = () => {
+		const fx = input.homeVisual.getFx();
+		fx.mouseActive = false;
+		fx.mouseXy = { x: -999, y: -999 };
+	};
+
+	const onMouseDown = (event: MouseEvent) => {
+		if (event.button === 2 || input.isPointerOverUi(event)) return;
+		rotating = true;
+		lastX = event.clientX;
+		lastY = event.clientY;
+		lastT = performance.now();
+		input.cinema.getState().orbit.rotating = true;
+		updatePointerTarget(event.clientX, event.clientY);
+	};
+
+	const onMouseMove = (event: MouseEvent) => {
+		if (input.isPointerOverUi(event) && !rotating) {
+			clearPointer();
+			return;
+		}
+		updatePointerTarget(event.clientX, event.clientY);
+		if (!rotating || input.freeCamera.active) return;
+		const now = performance.now();
+		const dt = Math.max(1 / 120, Math.min(0.08, (now - lastT) / 1000 || 1 / 60));
+		input.homeVisual.applyPointerSpinDrag(event.clientX - lastX, event.clientY - lastY, dt);
+		const orbit = input.cinema.getState().orbit;
+		orbit.centerLocked = false;
+		orbit.rotating = true;
+		lastX = event.clientX;
+		lastY = event.clientY;
+		lastT = now;
+	};
+
+	const endDrag = () => {
+		rotating = false;
+		input.cinema.getState().orbit.rotating = false;
+	};
+
+	const onMouseLeave = () => {
+		clearPointer();
+		endDrag();
+	};
+
+	const onWheel = (event: WheelEvent) => {
+		if (input.isPointerOverUi(event) || input.freeCamera.active) return;
+		event.preventDefault();
+		const orbit = input.cinema.getState().orbit;
+		orbit.centerLocked = false;
+		orbit.userRadius = Math.max(orbit.minRadius, Math.min(orbit.maxRadius, orbit.userRadius + event.deltaY * 0.005));
+	};
+
+	input.target.addEventListener("mousedown", onMouseDown);
+	input.windowTarget.addEventListener("mousemove", onMouseMove);
+	input.windowTarget.addEventListener("mouseup", endDrag);
+	input.windowTarget.addEventListener("blur", endDrag);
+	input.target.addEventListener("mouseleave", onMouseLeave);
+	input.target.addEventListener("wheel", onWheel, { passive: false });
+	return () => {
+		input.target.removeEventListener("mousedown", onMouseDown);
+		input.windowTarget.removeEventListener("mousemove", onMouseMove);
+		input.windowTarget.removeEventListener("mouseup", endDrag);
+		input.windowTarget.removeEventListener("blur", endDrag);
+		input.target.removeEventListener("mouseleave", onMouseLeave);
+		input.target.removeEventListener("wheel", onWheel);
 	};
 }
 
@@ -590,6 +685,10 @@ function disposeHandles(handles: MountedHandles | null): void {
 	} catch {
 	}
 	try {
+		handles.offCanvasPointer();
+	} catch {
+	}
+	try {
 		handles.lifecycle.dispose();
 	} catch {
 	}
@@ -816,6 +915,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			let syncedShelfItemsVersion = refs.shelfItemsVersionRef.current;
 			let syncedBeatMapVersion = refs.beatMapVersionRef?.current ?? 0;
 			let syncedShelfContentOpen = false;
+			const pointerTarget = { x: 0, y: 0 };
+			const pointerParallax = { x: 0, y: 0 };
 			shelfManager.setData(refs.shelfItemsRef.current);
 			const beatMapScheduler = createBeatMapScheduler({
 				scheduleCameraBeat: (beat) => cinema.applyBeat(Math.max(Number(beat.strength) || 0, Number(beat.impact) || 0), true),
@@ -840,6 +941,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				scene: renderer.scene,
 				camera: renderer.camera,
 				audio: audioEngine,
+				pointerTarget,
+				pointerParallax,
 				isMainSceneCoveredBySplash: () => refs.splashActiveRef.current,
 				getAdaptiveFps: () => 0,
 				prefersReducedMotion,
@@ -1082,16 +1185,26 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 					}
 				},
 			});
+			const isPointerOverRuntimeUi = (event: MouseEvent | WheelEvent) => {
+				const el = document.elementFromPoint(event.clientX, event.clientY);
+				return !!(el && el.closest?.("#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay"));
+			};
+			const offCanvasPointer = attachBaselineCanvasPointerInput({
+				target: renderer.renderer.domElement,
+				windowTarget: window,
+				homeVisual,
+				cinema,
+				freeCamera,
+				pointerTarget,
+				isPointerOverUi: isPointerOverRuntimeUi,
+			});
 			const offFreeCamera = attachFreeCameraHost({
 				target: window,
 				wheelTarget: renderer.renderer.domElement,
 				state: freeCamera,
 				getCameraPose: () => createFreeCameraPoseFromPerspectiveCamera(renderer.camera),
 				getNowMs: () => performance.now(),
-				isPointerOverUi: (event) => {
-					const el = document.elementFromPoint(event.clientX, event.clientY);
-					return !!(el && el.closest?.("#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay"));
-				},
+				isPointerOverUi: isPointerOverRuntimeUi,
 			});
 			handles = {
 				renderer,
@@ -1114,6 +1227,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				offShelfFocus,
 				offShelfPointerInteractions,
 				offFreeCamera,
+				offCanvasPointer,
 			};
 			renderLoop.start();
 		})();

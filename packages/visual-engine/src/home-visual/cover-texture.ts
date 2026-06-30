@@ -104,16 +104,44 @@ export function prepareSquareCoverCanvas(
 	return cv;
 }
 
-function defaultLoadImage(url: string): Promise<HomeCoverImage> {
+function loadImageElement(url: string, crossOrigin: boolean): Promise<HomeCoverImage> {
 	if (typeof Image === "undefined") return Promise.reject(new Error("Image unavailable"));
 	return new Promise((resolve, reject) => {
 		const img = new Image();
-		img.crossOrigin = "anonymous";
+		if (crossOrigin) img.crossOrigin = "anonymous";
 		img.decoding = "async";
 		img.onload = () => resolve(img);
 		img.onerror = () => reject(new Error(`failed to load cover image: ${url}`));
 		img.src = url;
 	});
+}
+
+async function defaultLoadImage(url: string): Promise<HomeCoverImage> {
+	try {
+		return await loadImageElement(url, true);
+	} catch (firstError) {
+		if (
+			typeof fetch !== "function" ||
+			typeof URL === "undefined" ||
+			typeof URL.createObjectURL !== "function"
+		) {
+			throw firstError;
+		}
+		const res = await fetch(url, { cache: "force-cache" });
+		if (!res.ok) throw firstError;
+		const contentType = res.headers.get("content-type") ?? "";
+		if (contentType && !/^image\//i.test(contentType)) throw firstError;
+		const blobUrl = URL.createObjectURL(await res.blob());
+		try {
+			return await loadImageElement(blobUrl, false);
+		} finally {
+			if (typeof setTimeout === "function") {
+				setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
+			} else {
+				URL.revokeObjectURL(blobUrl);
+			}
+		}
+	}
 }
 
 function markTextureImage(tex: THREE.Texture, image: HomeCoverImage): void {
