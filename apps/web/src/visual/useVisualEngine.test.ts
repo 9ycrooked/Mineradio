@@ -1,5 +1,18 @@
 import { expect, test } from "bun:test";
-import { createStageLyricsHostSuppliers, createStageLyricsShelfSuppliers, isRuntimeShelfPreviewActive, lyricPaletteFromHex, resolveHomeVisualPreset, resolveRuntimeWallpaperSafe, resolveSkullMouthLyricsActive, resolveSkullShelfCompositionActive, resolveStageLyricLayoutOptions, resolveStageLyricPalette, shouldDimWallpaperParticlesForShelf, setRuntimeShelfMode } from "./useVisualEngine";
+import { RENDER_STEP_ORDER, RenderStepSlot } from "@mineradio/visual-engine";
+import { createStageLyricsHostSuppliers, createStageLyricsShelfSuppliers, initAudioSource, isRuntimeShelfPreviewActive, lyricPaletteFromHex, readVisualCurrentTimeSeconds, resolveHomeVisualPreset, resolveRuntimeWallpaperSafe, resolveSkullMouthLyricsActive, resolveSkullShelfCompositionActive, resolveStageLyricLayoutOptions, resolveStageLyricPalette, shouldDimWallpaperParticlesForShelf, shouldResetLyricStageCameraView, shouldRetryVisualCoverLoad, setRuntimeShelfMode } from "./useVisualEngine";
+
+test("useVisualEngine wires the dedicated lyric particle render slot between shelf and home visual", async () => {
+	const source = await fetch(new URL("./useVisualEngine.ts", import.meta.url)).then((res) => res.text());
+	const createIndex = source.indexOf("createLyricParticles");
+	expect(createIndex).toBeGreaterThan(0);
+	expect(source).toContain("renderLoop.registerStep(RenderStepSlot.LyricParticles");
+	expect(source).toContain("lyricParticles.update(ctx)");
+	expect(source).toContain("homeVisual.applySkullWheel");
+	expect(source).toContain("homeVisual.getSkullWheelZoom()");
+	expect(RENDER_STEP_ORDER.indexOf(RenderStepSlot.LyricParticles)).toBeGreaterThan(RENDER_STEP_ORDER.indexOf(RenderStepSlot.Shelf));
+	expect(RENDER_STEP_ORDER.indexOf(RenderStepSlot.LyricParticles)).toBeLessThan(RENDER_STEP_ORDER.indexOf(RenderStepSlot.HomeVisual));
+});
 
 test("isRuntimeShelfPreviewActive follows side-auto shelf visibility readiness", () => {
 	expect(isRuntimeShelfPreviewActive("auto", 0.17)).toBe(true);
@@ -95,6 +108,179 @@ test("setRuntimeShelfMode notifies the persistent shelf mode source", () => {
 	expect(calls).toEqual(["side"]);
 });
 
+test("readVisualCurrentTimeSeconds prefers frame-accurate audio time over React position state", () => {
+	expect(readVisualCurrentTimeSeconds({ currentTime: 12.345 } as HTMLAudioElement, 10_000)).toBe(12.345);
+	expect(readVisualCurrentTimeSeconds({ currentTime: NaN } as HTMLAudioElement, 10_000)).toBe(10);
+	expect(readVisualCurrentTimeSeconds(null, 0)).toBe(0);
+});
+
+test("initAudioSource reuses the baseline cached MediaElementSource and AudioContext for the same audio element", async () => {
+	const originalWindow = globalThis.window;
+	const createdSources: unknown[] = [];
+	const createdContexts: unknown[] = [];
+	let resumeCount = 0;
+	const el = {
+		paused: false,
+		ended: false,
+		currentTime: 1.25,
+	} as HTMLAudioElement & Record<string, unknown>;
+	class FakeNode {
+		connections: unknown[] = [];
+		connect(node: unknown) {
+			this.connections.push(node);
+		}
+		disconnect() {
+			this.connections = [];
+		}
+	}
+	class FakeAnalyser extends FakeNode {
+		fftSize = 0;
+		frequencyBinCount = 4;
+		smoothingTimeConstant = 0;
+		getByteFrequencyData(data: Uint8Array) {
+			data.fill(24);
+		}
+		getByteTimeDomainData(data: Uint8Array) {
+			data.fill(128);
+		}
+	}
+	class FakeAudioContext {
+		state = "suspended";
+		sampleRate = 48_000;
+		destination = new FakeNode();
+		constructor() {
+			createdContexts.push(this);
+		}
+		createAnalyser() {
+			return new FakeAnalyser();
+		}
+		createGain() {
+			return { gain: { value: 0 }, connect() {}, disconnect() {} };
+		}
+		createMediaElementSource(audio: HTMLAudioElement) {
+			const source = new FakeNode();
+			createdSources.push({ source, audio, context: this });
+			return source;
+		}
+		resume() {
+			resumeCount += 1;
+			this.state = "running";
+			return Promise.resolve();
+		}
+	}
+	globalThis.window = {
+		AudioContext: FakeAudioContext,
+	} as unknown as Window & typeof globalThis;
+	try {
+		const first = await initAudioSource(() => el);
+		const firstFrame = first();
+		const second = await initAudioSource(() => el);
+		const secondFrame = second();
+
+		expect(createdContexts.length).toBe(1);
+		expect(createdSources.length).toBe(1);
+		if (!firstFrame || !secondFrame) throw new Error("expected audio frames");
+		expect(firstFrame.playing).toBe(true);
+		expect(secondFrame.playing).toBe(true);
+		expect(resumeCount).toBeGreaterThan(0);
+		first.dispose();
+		second.dispose();
+	} finally {
+		globalThis.window = originalWindow;
+	}
+});
+
+test("initAudioSource exposes the cached AudioContext before the first analyser frame", async () => {
+	const originalWindow = globalThis.window;
+	const el = {} as HTMLAudioElement & Record<string, unknown>;
+	class FakeNode {
+		connect() {}
+		disconnect() {}
+	}
+	class FakeAnalyser extends FakeNode {
+		fftSize = 0;
+		frequencyBinCount = 4;
+		smoothingTimeConstant = 0;
+		getByteFrequencyData() {}
+		getByteTimeDomainData() {}
+	}
+	class FakeAudioContext {
+		state = "suspended";
+		sampleRate = 48_000;
+		destination = new FakeNode();
+		createAnalyser() {
+			return new FakeAnalyser();
+		}
+		createGain() {
+			return { gain: { value: 0 }, connect() {}, disconnect() {} };
+		}
+		createMediaElementSource() {
+			return new FakeNode();
+		}
+		resume() {
+			this.state = "running";
+			return Promise.resolve();
+		}
+	}
+	globalThis.window = {
+		AudioContext: FakeAudioContext,
+	} as unknown as Window & typeof globalThis;
+	try {
+		const frameSource = await initAudioSource(() => el);
+		expect(el._mineradioAudioCtx).toBe(frameSource.audioContext);
+		frameSource.dispose();
+	} finally {
+		globalThis.window = originalWindow;
+	}
+});
+
+test("shouldResetLyricStageCameraView fires only when leaving Home preview into playback stage", () => {
+	expect(shouldResetLyricStageCameraView({ wasHomeActive: true, homeActive: false, playbackActive: true })).toBe(true);
+	expect(shouldResetLyricStageCameraView({ wasHomeActive: true, homeActive: false, playbackActive: false })).toBe(false);
+	expect(shouldResetLyricStageCameraView({ wasHomeActive: false, homeActive: false, playbackActive: true })).toBe(false);
+	expect(shouldResetLyricStageCameraView({ wasHomeActive: true, homeActive: true, playbackActive: true })).toBe(false);
+});
+
+test("shouldRetryVisualCoverLoad retries failed cover loads after sidecar recovery without spamming successful textures", () => {
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "",
+		hasCover: 0,
+		nowMs: 5000,
+		lastAttemptAtMs: 0,
+		lastAttemptUrl: "",
+	})).toBe(false);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg",
+		hasCover: 1,
+		nowMs: 5000,
+		lastAttemptAtMs: 0,
+		lastAttemptUrl: "http://127.0.0.1:4111/image-proxy?url=https%3A%2F%2Fimg.example%2Fa.jpg",
+	})).toBe(false);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "next.jpg",
+		hasCover: 0,
+		nowMs: 200,
+		lastAttemptAtMs: 100,
+		lastAttemptUrl: "prev.jpg",
+	})).toBe(true);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "same.jpg",
+		hasCover: 0,
+		nowMs: 2000,
+		lastAttemptAtMs: 1000,
+		lastAttemptUrl: "same.jpg",
+		intervalMs: 2200,
+	})).toBe(false);
+	expect(shouldRetryVisualCoverLoad({
+		coverUrl: "same.jpg",
+		hasCover: 0,
+		nowMs: 3300,
+		lastAttemptAtMs: 1000,
+		lastAttemptUrl: "same.jpg",
+		intervalMs: 2200,
+	})).toBe(true);
+});
+
 test("resolveHomeVisualPreset applies baseline idle wallpaper preset and restores previous preset", () => {
 	const activated = resolveHomeVisualPreset(true, 2, 0, null);
 	expect(activated).toEqual({ preset: 5, previousPreset: 2, changed: true });
@@ -126,6 +312,18 @@ test("resolveHomeVisualPreset keeps cached pre-home preset ahead of playback pre
 		playbackPreset: 2,
 	});
 	expect(restored).toEqual({ preset: 4, previousPreset: null, changed: true });
+});
+
+test("resolveHomeVisualPreset stops forcing idle wallpaper after a committed DIY preset change", () => {
+	const manual = resolveHomeVisualPreset(true, 4, 4, 2, {
+		committedPresetChanged: true,
+	});
+	expect(manual).toEqual({ preset: 4, previousPreset: null, changed: false });
+
+	const held = resolveHomeVisualPreset(true, 4, 4, null, {
+		previewEnabled: false,
+	});
+	expect(held).toEqual({ preset: 4, previousPreset: null, changed: false });
 });
 
 test("resolveStageLyricLayoutOptions carries baseline camera lock and layout controls", () => {

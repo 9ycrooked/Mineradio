@@ -150,6 +150,10 @@ function isShelfWheelZone(event: WheelEvent, viewportWidth: number, viewportHeig
 	return event.clientX > viewportWidth - edge && event.clientY > 116 && event.clientY < viewportHeight - 116;
 }
 
+function isStageShelfWheelZone(event: WheelEvent, viewportHeight: number): boolean {
+	return event.clientY > viewportHeight * 0.60 && event.clientY < viewportHeight - 96;
+}
+
 export function isShelfInteractionUiTarget(target: EventTarget | null): boolean {
 	if (!target) return false;
 	const maybeElement = target as {
@@ -318,6 +322,11 @@ export function attachShelfPointerInteractionWiring(
 		if (opts.shelfManager.getMode() !== "side") return false;
 		if (!isShelfPinnedOpen()) return false;
 		return isShelfWheelZone(event, opts.getViewportWidth(), opts.getViewportHeight());
+	};
+
+	const canUseStageWheelZone = (event: WheelEvent): boolean => {
+		if (opts.shelfManager.getMode() !== "stage") return false;
+		return isStageShelfWheelZone(event, opts.getViewportHeight());
 	};
 
 	const canUseDetailWheel = (event: WheelEvent): boolean => {
@@ -491,6 +500,7 @@ export function attachShelfPointerInteractionWiring(
 			&& !canForceWheelScroll(wheelEvent)
 			&& !canUsePreviewWheelZone(wheelEvent)
 			&& !canUsePinnedWheelZone(wheelEvent)
+			&& !canUseStageWheelZone(wheelEvent)
 		) return;
 		wheelEvent.preventDefault();
 		wheelEvent.stopImmediatePropagation();

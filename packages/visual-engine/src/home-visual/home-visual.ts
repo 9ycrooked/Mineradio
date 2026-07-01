@@ -40,6 +40,7 @@ export interface HomeVisualOptions {
 	backCoverRandom?: () => number;
 	skullAssetData?: Float32Array | null;
 	loadSkullAsset?: () => Promise<Float32Array | null>;
+	orbitCenterLockedSupplier?: () => boolean;
 }
 
 export interface HomeVisual {
@@ -57,10 +58,28 @@ export interface HomeVisual {
 	getSkullBeatFlash(): number;
 	setSkullShelfCompositionActive(active: boolean): void;
 	setWallpaperShelfDimActive(active: boolean): void;
+	applySkullWheel(deltaY: number): boolean;
+	getSkullWheelZoom(): number;
+	applyPointerSpinDrag(dx: number, dy: number, dtSeconds: number): void;
+	resetParticleRotation(syncVisual?: boolean): void;
 	whenIdle(): Promise<void>;
 }
 
 let skullAssetCache: Float32Array | null | undefined;
+
+const PARTICLE_POINTER_SPIN_X = 0.0032;
+const PARTICLE_POINTER_SPIN_Y = 0.0034;
+const PARTICLE_SPIN_MAX = 6.2;
+
+function clampParticleSpinVelocity(v: number): number {
+	if (!Number.isFinite(v)) return 0;
+	return Math.max(-PARTICLE_SPIN_MAX, Math.min(PARTICLE_SPIN_MAX, v));
+}
+
+function clampRange(v: number, lo: number, hi: number): number {
+	if (!Number.isFinite(v)) return lo;
+	return Math.max(lo, Math.min(hi, v));
+}
 
 async function defaultLoadSkullAssetData(): Promise<Float32Array | null> {
 	if (skullAssetCache !== undefined) return skullAssetCache;
@@ -96,11 +115,20 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 	const skullAssetData = opts.skullAssetData !== undefined
 		? opts.skullAssetData
 		: await (opts.loadSkullAsset ?? defaultLoadSkullAssetData)();
+	const particleSpin = { vx: 0, vy: 0, damping: 0.90 };
+	const gestureRotation = { x: 0, y: 0 };
+	let skullWheelZoom = 0;
+	let skullWheelZoomTarget = 0;
+	let latestHeadParallax = { active: false, x: 0, y: 0 };
 	const skullParticles: SkullParticleController = await createSkullParticleController({
 		scene: opts.scene,
 		threeFactory: opts.threeFactory,
 		uniforms: field.materialUniforms,
 		assetData: skullAssetData,
+		wheelZoomSupplier: () => skullWheelZoom,
+		headParallaxSupplier: () => latestHeadParallax,
+		gestureRotationSupplier: () => gestureRotation,
+		orbitCenterLockedSupplier: opts.orbitCenterLockedSupplier,
 	});
 	const coverController = createHomeCoverTextureController({
 		uniforms: field.materialUniforms as never,
@@ -160,6 +188,58 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		}
 	}
 
+	function rebaseParticleRotationAxis(axis: "x" | "y"): void {
+		const limit = Math.PI * 10;
+		if (Math.abs(gestureRotation[axis]) < limit) return;
+		const offset = Math.round(gestureRotation[axis] / (Math.PI * 2)) * Math.PI * 2;
+		gestureRotation[axis] -= offset;
+		field.points.rotation[axis] -= offset;
+		field.bloomPoints.rotation[axis] -= offset;
+		backCoverLayer?.getPoints().rotation && (backCoverLayer.getPoints().rotation[axis] -= offset);
+		const skull = skullParticles.getObject();
+		if (skull) skull.rotation[axis] -= offset;
+	}
+
+	function copyRotation(target: { x: number; y: number; z: number; copy?: (...args: any[]) => unknown }, source: { x: number; y: number; z: number }): void {
+		if (typeof target.copy === "function") {
+			target.copy(source);
+			return;
+		}
+		target.x = source.x;
+		target.y = source.y;
+		target.z = source.z;
+	}
+
+	function setRotation(target: { x: number; y: number; z: number; set?: (x: number, y: number, z: number) => unknown }, x: number, y: number, z: number): void {
+		if (typeof target.set === "function") {
+			target.set(x, y, z);
+			return;
+		}
+		target.x = x;
+		target.y = y;
+		target.z = z;
+	}
+
+	function tickPointerRotation(dtSeconds: number): void {
+		const dt = Number.isFinite(dtSeconds) ? Math.max(0, Math.min(0.08, dtSeconds)) : 1 / 60;
+		if (Math.abs(particleSpin.vx) > 0.0001 || Math.abs(particleSpin.vy) > 0.0001) {
+			gestureRotation.x += particleSpin.vx * dt;
+			gestureRotation.y += particleSpin.vy * dt;
+			rebaseParticleRotationAxis("x");
+			rebaseParticleRotationAxis("y");
+		}
+		particleSpin.vx *= Math.pow(particleSpin.damping, dt * 60);
+		particleSpin.vy *= Math.pow(particleSpin.damping, dt * 60);
+		if (Math.abs(particleSpin.vx) < 0.01) particleSpin.vx = 0;
+		if (Math.abs(particleSpin.vy) < 0.01) particleSpin.vy = 0;
+
+		field.points.rotation.y += (gestureRotation.y - field.points.rotation.y) * 0.055;
+		field.points.rotation.x += (gestureRotation.x - field.points.rotation.x) * 0.055;
+		copyRotation(field.bloomPoints.rotation, field.points.rotation);
+		const backCoverPoints = backCoverLayer?.getPoints();
+		if (backCoverPoints) copyRotation(backCoverPoints.rotation, field.points.rotation);
+	}
+
 	function stepBody(ctx: FrameContext): void {
 		field.applyFxState(fx);
 		coverController.setAiDepthEnabled(fx.aiDepth);
@@ -183,6 +263,14 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		}
 		coverController.advanceColorMix(ctx.dt);
 		coverController.advanceDepth(ctx.dt);
+		tickPointerRotation(ctx.dt);
+		latestHeadParallax = {
+			active: fx.mouseActive === true,
+			x: Number(ctx.pointerParallax?.x) || 0,
+			y: Number(ctx.pointerParallax?.y) || 0,
+		};
+		if (fx.preset !== SKULL_PRESET_INDEX) skullWheelZoomTarget = 0;
+		skullWheelZoom += (skullWheelZoomTarget - skullWheelZoom) * Math.min(1, ctx.dt * 8.0);
 		skullParticles.update(ctx, fx);
 	}
 
@@ -232,6 +320,35 @@ export async function createHomeVisual(opts: HomeVisualOptions): Promise<HomeVis
 		},
 		setWallpaperShelfDimActive(active) {
 			wallpaperShelfDimActive = !!active;
+		},
+		applySkullWheel(deltaY) {
+			if (fx.preset !== SKULL_PRESET_INDEX) return false;
+			skullWheelZoomTarget = clampRange(skullWheelZoomTarget + deltaY * 0.00155, -0.95, 1.28);
+			return true;
+		},
+		getSkullWheelZoom() {
+			return skullWheelZoom;
+		},
+		applyPointerSpinDrag(dx, dy, dtSeconds) {
+			const dt = Math.max(1 / 120, Math.min(0.08, Number(dtSeconds) || 1 / 60));
+			const rx = dy * PARTICLE_POINTER_SPIN_X;
+			const ry = dx * PARTICLE_POINTER_SPIN_Y;
+			gestureRotation.x += rx;
+			gestureRotation.y += ry;
+			particleSpin.vx = clampParticleSpinVelocity((rx / dt) * 0.46);
+			particleSpin.vy = clampParticleSpinVelocity((ry / dt) * 0.46);
+		},
+		resetParticleRotation(syncVisual = false) {
+			gestureRotation.x = 0;
+			gestureRotation.y = 0;
+			particleSpin.vx = 0;
+			particleSpin.vy = 0;
+			if (syncVisual) {
+				setRotation(field.points.rotation, 0, 0, 0);
+				setRotation(field.bloomPoints.rotation, 0, 0, 0);
+				const backCoverPoints = backCoverLayer?.getPoints();
+				if (backCoverPoints) setRotation(backCoverPoints.rotation, 0, 0, 0);
+			}
 		},
 		whenIdle() {
 			return backCoverPending ?? Promise.resolve();

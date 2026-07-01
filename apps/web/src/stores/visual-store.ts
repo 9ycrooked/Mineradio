@@ -162,6 +162,10 @@ export function normalizeVisualFxState(
     lyricGlowLinked: booleanValue(input.lyricGlowLinked, fx.lyricGlowLinked),
     lyricGlowColor: hexColorValue(input.lyricGlowColor, fx.lyricGlowColor),
     uiAccentColor: hexColorValue(input.uiAccentColor, fx.uiAccentColor),
+    homeAccentColor: hexColorValue(
+      input.homeAccentColor,
+      fx.homeAccentColor,
+    ),
     backgroundOpacity: clamp(
       input.backgroundOpacity,
       fx.backgroundOpacity,

@@ -97,6 +97,7 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 	const normalBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 	const motionRef = useRef<ControlConsoleMotion | null>(null);
 	const visibleRef = useRef(!!props.visible);
+	const barHoveringRef = useRef(false);
 	const progressParticleEmitterRef = useRef<ProgressDragParticleEmitter | null>(null);
 
 	visibleRef.current = !!props.visible;
@@ -108,6 +109,8 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 	onToggleFullscreenRef.current = props.onToggleFullscreen;
 	const onCloseRef = useRef(props.onClose);
 	onCloseRef.current = props.onClose;
+	const onRevealRef = useRef(props.onReveal);
+	onRevealRef.current = props.onReveal;
 	const onTogglePlayRef = useRef(props.onTogglePlay);
 	onTogglePlayRef.current = props.onTogglePlay;
 	const onPreviousRef = useRef(props.onPrevious);
@@ -176,7 +179,13 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 		const normalButtons = Object.values(normalBtnRefs.current).filter((b): b is HTMLButtonElement => !!b);
 		const motion = createControlConsoleMotion({
 			root: { bar, modeButton, modeIcon, playButton, normalButtons },
-			deps: depsRef.current,
+			deps: {
+				controlsHovering: () => barHoveringRef.current || !!depsRef.current?.controlsHovering?.(),
+				miniQueueOpen: () => !!depsRef.current?.miniQueueOpen?.(),
+				controlsAutoHide: () => depsRef.current?.controlsAutoHide?.() ?? true,
+				isHomeControlsLocked: () => !!depsRef.current?.isHomeControlsLocked?.(),
+				isShelfSuppressed: () => !!depsRef.current?.isShelfSuppressed?.(),
+			},
 		});
 		motionRef.current = motion;
 
@@ -187,8 +196,14 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 			else motion.setHidden(true);
 		});
 
-		const onBarEnter = () => motion.reveal(520);
+		const onBarEnter = () => {
+			barHoveringRef.current = true;
+			onRevealRef.current?.();
+			bar.classList.add("visible");
+			motion.setHidden(false);
+		};
 		const onBarLeave = () => {
+			barHoveringRef.current = false;
 			if (!visibleRef.current) motion.setHidden(true);
 		};
 		bar.addEventListener("pointerenter", onBarEnter);
@@ -366,8 +381,8 @@ export function PlayerConsoleHost(props: PlayerConsoleHostProps): ReactElement {
 					<div className="control-track">
 						<div id="control-cover" className={props.currentCoverUrl ? "control-cover has-cover" : "control-cover cover-empty"} style={props.currentCoverUrl ? { backgroundImage: `url(${props.currentCoverUrl})` } : undefined} aria-hidden="true" />
 						<div className="control-meta">
-							<div id="control-title" className="control-title">{props.currentTitle ?? "Mineradio"}</div>
-							<div id="control-artist" className="control-artist">{props.currentArtist ?? "等待播放"}</div>
+							<div id="control-title" className="control-title">{props.currentTitle ?? ""}</div>
+							<div id="control-artist" className="control-artist">{props.currentArtist ?? ""}</div>
 						</div>
 					</div>
 					<div id="quality-control" className="quality-control">

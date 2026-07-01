@@ -136,3 +136,24 @@ export function createControlGlassSvg(root: SVGElement | HTMLElement | null): SV
 	}
 	return svg;
 }
+
+export function normalizeControlGlassChromaticOffset(value: unknown): number {
+	const n = typeof value === "number" ? value : Number(value);
+	const finite = Number.isFinite(n) ? n : 90;
+	return Math.max(0, Math.min(140, finite));
+}
+
+export function applyControlGlassChromaticOffset(
+	root: Document | Element | null | undefined,
+	value: unknown,
+): number {
+	const offset = normalizeControlGlassChromaticOffset(value);
+	const filter = root?.querySelector?.("#mineradio-control-glass-filter");
+	if (!filter) return offset;
+	const dx = String(-Math.round(offset));
+	filter.querySelectorAll("feOffset").forEach((node) => {
+		node.setAttribute("dx", dx);
+		node.setAttribute("dy", "0");
+	});
+	return offset;
+}

@@ -174,12 +174,14 @@ test("loadVisualFxFromStorage normalizes baseline visual color controls", () => 
       visualTintMode: "CUSTOM",
       visualTintColor: "12ABEF",
       uiAccentColor: "not-a-color",
+      homeAccentColor: "fedcba",
     }),
   );
   const fx = loadVisualFxFromStorage(fakeStorage);
   expect(fx?.visualTintMode).toBe("custom");
   expect(fx?.visualTintColor).toBe("#12abef");
   expect(fx?.uiAccentColor).toBe("#ffffff");
+  expect(fx?.homeAccentColor).toBe("#fedcba");
 });
 
 test("loadVisualFxFromStorage normalizes baseline stage lyric color controls", () => {

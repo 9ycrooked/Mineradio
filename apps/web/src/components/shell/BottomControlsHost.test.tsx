@@ -102,7 +102,7 @@ test("BottomControlsHost mirrors baseline bottom handle wake and auto-hide hover
 	bar.dispatchEvent(new window.MouseEvent("mouseleave", { bubbles: true }));
 	expect(timers[timers.length - 2]?.delay).toBe(480);
 	timers[timers.length - 2]?.callback();
-	expect(calls).toEqual(["reveal", "hide", "hide"]);
+	expect(calls).toEqual(["reveal", "hide", "reveal", "hide"]);
 
 	root.unmount();
 	container.remove();

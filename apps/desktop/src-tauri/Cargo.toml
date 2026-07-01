@@ -1,8 +1,8 @@
 [package]
 name = "mineradio-tauri"
 version = "0.1.0"
-description = "Mineradio Tauri rewrite shell"
-authors = ["Mineradio"]
+description = "MineRadio-Tauri desktop music player"
+authors = ["MineRadio-Tauri contributors"]
 edition = "2021"
 license = "GPL-3.0"
 

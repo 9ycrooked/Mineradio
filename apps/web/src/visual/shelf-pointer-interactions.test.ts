@@ -819,7 +819,7 @@ test("attachShelfPointerInteractionWiring consumes first-level wheel when pane s
 	expect(event.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
 });
 
-test("attachShelfPointerInteractionWiring ignores stage wheel without hit unless shift forces shelf scroll", () => {
+test("attachShelfPointerInteractionWiring uses the baseline lower stage hot-zone for wheel fallback", () => {
 	const target = new FakePointerTarget();
 	const scrolled: number[] = [];
 	const cleanup = attachShelfPointerInteractionWiring({
@@ -843,13 +843,16 @@ test("attachShelfPointerInteractionWiring ignores stage wheel without hit unless
 	});
 
 	const normal = makeWheelEvent({ deltaY: 120 });
+	const lowerStage = makeWheelEvent({ deltaY: 120, clientX: 600, clientY: 650 });
 	const forced = makeWheelEvent({ deltaY: -120, shiftKey: true });
 	target.emit("wheel", normal);
+	target.emit("wheel", lowerStage);
 	target.emit("wheel", forced);
 	cleanup();
 
-	expect(scrolled).toEqual([-1]);
+	expect(scrolled).toEqual([1, -1]);
 	expect(normal.calls).toEqual([]);
+	expect(lowerStage.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
 	expect(forced.calls).toEqual(["preventDefault", "stopImmediatePropagation"]);
 });
 

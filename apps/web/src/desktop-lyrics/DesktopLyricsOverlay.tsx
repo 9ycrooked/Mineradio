@@ -107,7 +107,7 @@ export function computeDesktopLyricsLayout(
   options: DesktopLyricsLayoutOptions = {},
 ): DesktopLyricsLayout {
   const viewport = options.viewport ?? getDefaultDesktopLyricsViewport();
-  const text = String(payload.text || "Mineradio").replace(/\s+/g, " ").trim() || "Mineradio";
+  const text = String(payload.text || "MineRadio-Tauri").replace(/\s+/g, " ").trim() || "MineRadio-Tauri";
   const safeWidth = Math.max(300, viewport.width - 8);
   const edgeWidth = Math.round(clamp(safeWidth * 0.085, 54, 116));
   const viewportWidth = Math.round(
@@ -243,7 +243,7 @@ function measureDesktopLyricsTextFallback(
   fontSize: number,
 ): number {
   let units = 0;
-  for (const char of Array.from(text || "Mineradio")) {
+  for (const char of Array.from(text || "MineRadio-Tauri")) {
     units += /[^\x00-\xff]/.test(char) ? 0.96 : 0.56;
   }
   return Math.max(1, units * fontSize);

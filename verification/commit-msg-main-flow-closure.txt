@@ -1,1 +1,0 @@
-feat(migration): guard Tauri main flow closure

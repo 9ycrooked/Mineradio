@@ -216,6 +216,7 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 		three: null as ThreeModule | null,
 		shelfVisibility: 0,
 		lines: [] as LyricLine[],
+		linesSignature: "",
 		buildToken: 0,
 		activeBuilds: 0,
 		textOptionsSignature: "",
@@ -275,6 +276,25 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 
 	function textOptionsSignature(opts0: LyricTextOptions): string {
 		return `${opts0.lyricFont ?? ""}|${opts0.lyricLetterSpacing ?? ""}|${opts0.lyricLineHeight ?? ""}|${opts0.lyricWeight ?? ""}`;
+	}
+
+	function normalizeLyricLines(lines: LyricLine[]): LyricLine[] {
+		if (!Array.isArray(lines)) return [];
+		return lines
+			.map((line, originalIndex) => ({ line, originalIndex }))
+			.sort((a, b) => a.line.t - b.line.t || a.originalIndex - b.originalIndex)
+			.map(({ line }) => line);
+	}
+
+	function lyricLinesSignature(lines: LyricLine[]): string {
+		return lines
+			.map((line) => {
+				const words = Array.isArray(line.words)
+					? line.words.map((word) => `${word.t}:${word.d ?? ""}:${word.text}`).join(",")
+					: "";
+				return `${line.t}:${line.duration ?? ""}:${line.charCount ?? ""}:${line.text}:${words}`;
+			})
+			.join("\n");
 	}
 
 	function shouldDimWallpaperForShelf(): boolean {
@@ -943,15 +963,13 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 			clearStageLyrics();
 			return;
 		}
-		if (redrawOnly && state.current) {
-			disposeCurrent();
-		} else if (state.current) {
-			const outgoingLyric = state.current;
-			(outgoingLyric.group as unknown as { userData: Record<string, unknown> }).userData.state = "out";
-			(outgoingLyric.group as unknown as { userData: Record<string, unknown> }).userData.age = 0;
-			state.outgoing.push({ lyric: outgoingLyric, age: 0 });
-			state.current = null;
-		}
+		// Baseline `buildLyricMesh` is synchronous, so the old mesh is swapped
+		// to outgoing and the new mesh is attached in the same frame. The
+		// current renderer uses an async three factory, so we keep the previous lyric
+		// visible until the new group is ready, then swap atomically. This
+		// avoids a 1-2 frame gap where `state.current` would be null and the
+		// stage lyric would flicker out and back in (reported as lyric jitter).
+		const previousLyric = state.current;
 		state.currentText = text;
 		const textOptions = getLyricTextOptions();
 		state.textOptionsSignature = textOptionsSignature(textOptions);
@@ -981,6 +999,24 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 				if (!state.group) {
 					disposeLyricGroupSafe(lyric);
 					return;
+				}
+				// Swap the previous lyric out only now that the new group is
+				// ready. If this build was superseded (token mismatch), the
+				// previous lyric stays as `state.current` and a later build
+				// will perform the swap.
+				if (previousLyric && state.current === previousLyric) {
+					if (redrawOnly) {
+						try {
+							(state.group as unknown as { remove: (c: unknown) => void }).remove(previousLyric.group);
+						} catch {
+							void 0;
+						}
+						disposeLyricGroupSafe(previousLyric);
+					} else {
+						(previousLyric.group as unknown as { userData: Record<string, unknown> }).userData.state = "out";
+						(previousLyric.group as unknown as { userData: Record<string, unknown> }).userData.age = 0;
+						state.outgoing.push({ lyric: previousLyric, age: 0 });
+					}
 				}
 				(state.group as unknown as { add: (c: unknown) => void }).add(lyric.group);
 				state.current = lyric;
@@ -1415,14 +1451,19 @@ export function createStageLyricsLifecycle(opts: StageLyricsLifecycleOpts): Stag
 			}
 		},
 		setLyricLines(lines: LyricLine[]) {
-			state.lines = Array.isArray(lines) ? lines.slice() : [];
+			const normalized = normalizeLyricLines(lines);
+			const signature = lyricLinesSignature(normalized);
+			if (signature === state.linesSignature) return;
+			state.lines = normalized;
+			state.linesSignature = signature;
 			state.currentIdx = -1;
 		},
 		update(ctx: FrameContext) {
 			if (state.disposed) return;
 			if (!state.group) return;
 			const dt = ctx.dt;
-			const t = ctx.now;
+			const uniformTime = Number(ctx.uniforms.uTime.value);
+			const t = Number.isFinite(uniformTime) ? uniformTime : ctx.now / 1000;
 			state.lastFrame = { dt, t, snapshot: ctx.snapshot };
 			const nowSeconds = opts.currentTimeSupplier ? opts.currentTimeSupplier() : 0;
 			tickLyricsParticles(nowSeconds);

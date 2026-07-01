@@ -76,21 +76,41 @@ export function resolveVisualWallpaperSafe(
 
 export function mapLyricPayload(payload: LyricPayload | null): VisualLyricLine[] {
 	if (!payload || !Array.isArray(payload.lines)) return [];
-	return payload.lines.map((line: SharedLyricLine): VisualLyricLine => ({
-		t: Math.max(0, line.timeMs) / 1000,
-		text: line.text ?? "",
-		duration: typeof line.durationMs === "number" ? Math.max(0, line.durationMs) / 1000 : undefined,
-		charCount: line.charCount,
-		words: Array.isArray(line.words)
-			? line.words.map((word) => ({
-					text: word.text,
-					t: Math.max(0, word.timeMs) / 1000,
-					d: typeof word.durationMs === "number" ? Math.max(0, word.durationMs) / 1000 : undefined,
-					c0: word.c0,
-					c1: word.c1,
-				}))
-			: undefined,
-	}));
+	return payload.lines
+		.map((line: SharedLyricLine, originalIndex): VisualLyricLine & { originalIndex: number } => ({
+			t: Math.max(0, line.timeMs) / 1000,
+			text: line.text ?? "",
+			duration: typeof line.durationMs === "number" ? Math.max(0, line.durationMs) / 1000 : undefined,
+			charCount: line.charCount,
+			words: Array.isArray(line.words)
+				? line.words
+						.map((word, wordIndex) => ({
+							text: word.text,
+							t: Math.max(0, word.timeMs) / 1000,
+							d: typeof word.durationMs === "number" ? Math.max(0, word.durationMs) / 1000 : undefined,
+							c0: word.c0,
+							c1: word.c1,
+							wordIndex,
+						}))
+						.sort((a, b) => a.t - b.t || a.wordIndex - b.wordIndex)
+						.map((word) => ({
+							text: word.text,
+							t: word.t,
+							d: word.d,
+							c0: word.c0,
+							c1: word.c1,
+						}))
+				: undefined,
+			originalIndex,
+		}))
+		.sort((a, b) => a.t - b.t || a.originalIndex - b.originalIndex)
+		.map((line) => ({
+			t: line.t,
+			text: line.text,
+			duration: line.duration,
+			charCount: line.charCount,
+			words: line.words,
+		}));
 }
 
 export function resolveRuntimeShelfMode(
@@ -116,14 +136,36 @@ export function resolveVisualCoverUrl(currentCoverUrl: string | null | undefined
 	return currentCoverUrl ?? currentTrack?.coverUrl ?? "";
 }
 
+export function normalizeVisualCoverUrl(coverUrl: string): string {
+	const url = String(coverUrl || "").trim();
+	if (!url) return "";
+	if (/^\/\//.test(url)) return `https:${url}`;
+	return url;
+}
+
 export function resolveVisualCoverUrlForSidecar(coverUrl: string, sidecarBaseUrl: string | null | undefined): string {
-	if (!coverUrl) return "";
-	if (/^data:image\//i.test(coverUrl) || /^blob:/i.test(coverUrl)) return coverUrl;
-	if (!/^https?:\/\//i.test(coverUrl)) return "";
+	const normalizedCoverUrl = normalizeVisualCoverUrl(coverUrl);
+	if (!normalizedCoverUrl) return "";
+	if (/^data:image\//i.test(normalizedCoverUrl) || /^blob:/i.test(normalizedCoverUrl)) return normalizedCoverUrl;
+	if (!/^https?:\/\//i.test(normalizedCoverUrl)) return "";
 	const base = String(sidecarBaseUrl ?? "").replace(/\/$/, "");
-	if (!base) return coverUrl;
-	const params = new URLSearchParams({ url: coverUrl });
+	if (!base) return normalizedCoverUrl;
+	const params = new URLSearchParams({ url: normalizedCoverUrl });
 	return `${base}/image-proxy?${params.toString()}`;
+}
+
+export function coverUrlToCssBackgroundImage(coverUrl: string): string | undefined {
+	const url = String(coverUrl || "").trim();
+	if (!url) return undefined;
+	return `url("${url.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}")`;
+}
+
+export function mapShelfItemCoversForSidecar(items: ShelfItem[], sidecarBaseUrl: string | null | undefined): ShelfItem[] {
+	return items.map((item) => {
+		if (!item.cover) return item;
+		const cover = resolveVisualCoverUrlForSidecar(item.cover, sidecarBaseUrl);
+		return cover === item.cover ? item : { ...item, cover };
+	});
 }
 
 export function countShelfPanePlaylists(playlists: PlaylistSummary[]): { mineCount: number; favCount: number } {
@@ -234,6 +276,15 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 		beatMapRef.current = props.beatMap ?? null;
 		beatMapVersionRef.current += 1;
 	}
+	// Baseline `#album-bg` uses the direct cover URL for the CSS background
+	// (CSS images do not need CORS), while the WebGL cover texture goes through
+	// the sidecar image proxy for crossOrigin compatibility. Using the proxy
+	// URL here would make the album background depend on sidecar availability
+	// even for a pure CSS property.
+	const directCoverUrl = normalizeVisualCoverUrl(
+		resolveVisualCoverUrl(props.currentCoverUrl, props.currentTrack),
+	);
+	const albumBgStyle = directCoverUrl ? { backgroundImage: coverUrlToCssBackgroundImage(directCoverUrl) } : undefined;
 
 	const handleShelfModeChange = useCallback((mode: "side") => {
 		runtimeShelfModeOverrideRef.current = mode;
@@ -249,18 +300,21 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 	shelfFavCountRef.current = shelfPaneCounts.favCount;
 
 	const nextShelfItems = useMemo(
-		() => resolveShelfItems({
-			playlists: props.playlists ?? [],
-			podcastCollections: props.podcastCollections ?? [],
-			queue: props.queue ?? [],
-			currentTrack: props.currentTrack ?? null,
-			settings: {
-				showPodcasts: visualShelfSettings.showPodcasts,
-				mergeCollections: visualShelfSettings.mergeCollections,
-				pane: shelfPane,
-			},
-		}),
-		[props.playlists, props.podcastCollections, props.queue, props.currentTrack, visualShelfSettings.showPodcasts, visualShelfSettings.mergeCollections, shelfPane],
+		() => mapShelfItemCoversForSidecar(
+			resolveShelfItems({
+				playlists: props.playlists ?? [],
+				podcastCollections: props.podcastCollections ?? [],
+				queue: props.queue ?? [],
+				currentTrack: props.currentTrack ?? null,
+				settings: {
+					showPodcasts: visualShelfSettings.showPodcasts,
+					mergeCollections: visualShelfSettings.mergeCollections,
+					pane: shelfPane,
+				},
+			}),
+			props.sidecarBaseUrl,
+		),
+		[props.playlists, props.podcastCollections, props.queue, props.currentTrack, props.sidecarBaseUrl, visualShelfSettings.showPodcasts, visualShelfSettings.mergeCollections, shelfPane],
 	);
 
 	useEffect(() => {
@@ -319,5 +373,13 @@ export function VisualEngineHost(props: VisualEngineHostProps): ReactElement {
 		onShelfModeChange: handleShelfModeChange,
 	});
 
-	return <div id="visual-host" className="visual-host" ref={hostRef} />;
+	return (
+		<>
+			<div id="custom-bg" aria-hidden="true">
+				<video id="custom-bg-video" muted loop playsInline preload="metadata" />
+			</div>
+			<div id="album-bg" className={directCoverUrl ? "visible" : undefined} style={albumBgStyle} aria-hidden="true" />
+			<div id="visual-host" className="visual-host" ref={hostRef} />
+		</>
+	);
 }

@@ -69,6 +69,7 @@ import {
 } from "../tauri/runtime";
 import { checkForUpdate, getUpdaterStatus, installUpdate } from "../tauri/updater";
 import { BottomControlsHost } from "../components/shell/BottomControlsHost";
+import { GuideParticlesHost } from "../components/shell/GuideParticlesHost";
 import { PlaylistPanelHost, type PlaylistPanelTab } from "../components/shell/PlaylistPanelHost";
 import { SearchShell, type SearchMode } from "../components/shell/SearchShell";
 import {
@@ -132,6 +133,7 @@ const PLAYBACK_QUALITY_STORE_KEY = "mineradio-playback-quality-v1";
 const HOME_LISTEN_STATS_STORE_KEY = "mineradio-listen-stats-v1";
 const USER_CAPSULE_AUTO_HIDE_STORE_KEY = "mineradio-user-capsule-auto-hide-v1";
 const PLAYLIST_PANEL_PIN_STORE_KEY = "mineradio-playlist-panel-pinned-v1";
+const DIY_MODE_STORE_KEY = "mineradio-diy-player-mode-v1";
 const DEFAULT_GLOBAL_HOTKEYS: GlobalHotkeyBinding[] = [
   { action: "togglePlay", accelerator: "Control+Alt+Space" },
   { action: "prevTrack", accelerator: "Control+Alt+ArrowLeft" },
@@ -305,7 +307,7 @@ function desktopOverlayColorValue(value: unknown, fallback: string): string {
 }
 
 function trackTitle(track: Track | null | undefined): string {
-  return track?.title || "Mineradio";
+  return track?.title || "MineRadio-Tauri";
 }
 
 function trackArtist(track: Track | null | undefined): string {
@@ -573,7 +575,7 @@ export function buildDesktopLyricsPayloadPatch(
     text,
     progress: clampNumber(progress, 0, 1),
     progressSpan: clampNumber(Number(context.progressSpan ?? 4.8), 0, 60),
-    title: context.title || "Mineradio",
+    title: context.title || "MineRadio-Tauri",
     artist: context.artist || "",
     playing: context.playing === true,
     size,
@@ -689,6 +691,7 @@ export interface EmptyHomeStateInput {
   immersiveActive?: boolean;
   shelfDetailOpen?: boolean;
   shelfPinnedOpen?: boolean;
+  shelfStageOpen?: boolean;
 }
 
 export function shouldShowEmptyHome(input: EmptyHomeStateInput): boolean {
@@ -698,6 +701,7 @@ export function shouldShowEmptyHome(input: EmptyHomeStateInput): boolean {
   if (input.immersiveActive) return false;
   if (input.shelfDetailOpen) return false;
   if (input.shelfPinnedOpen) return false;
+  if (input.shelfStageOpen) return false;
   if (input.hasCurrentTrack) return false;
   if (input.queueLength > 0) return false;
   if (input.isPlaying) return false;
@@ -767,6 +771,7 @@ function DesktopTitlebar({
   updateSlot,
   onGuide,
   onDiy,
+  diyActive,
   onMinimize,
   onToggleMaximize,
   onClose,
@@ -775,6 +780,7 @@ function DesktopTitlebar({
   updateSlot: ReactElement | null;
   onGuide: () => void;
   onDiy: () => void;
+  diyActive: boolean;
   onMinimize: () => void;
   onToggleMaximize: () => void;
   onClose: () => void;
@@ -799,12 +805,12 @@ function DesktopTitlebar({
         {updateSlot}
         <button
           id="diy-mode-btn"
-          className="desktop-mode-btn"
+          className={`desktop-mode-btn${diyActive ? " on" : ""}`}
           type="button"
           onClick={onDiy}
-          title="开启 DIY 玩家模式"
-          aria-label="开启 DIY 玩家模式"
-          aria-pressed="false"
+          title={diyActive ? "关闭 DIY 玩家模式" : "开启 DIY 玩家模式"}
+          aria-label={diyActive ? "关闭 DIY 玩家模式" : "开启 DIY 玩家模式"}
+          aria-pressed={diyActive}
         >
           DIY
         </button>
@@ -864,6 +870,19 @@ export type AppProps = {
   VisualComponent?: typeof VisualEngineHost;
   createSidecarClient?: (cfg: RuntimeConfig) => SidecarClient;
   initialRuntimeConfig?: RuntimeConfig | null;
+  desktopLyricsRuntime?: DesktopLyricsRuntime;
+};
+
+export type DesktopLyricsRuntime = {
+  showWindow: () => Promise<void>;
+  closeWindow: () => Promise<void>;
+  updatePayload: (payload: JsonValue) => Promise<void>;
+};
+
+const defaultDesktopLyricsRuntime: DesktopLyricsRuntime = {
+  showWindow: showDesktopLyricsWindow,
+  closeWindow: closeDesktopLyricsWindow,
+  updatePayload: updateDesktopLyricsPayload,
 };
 
 function createDefaultSidecarClient(cfg: RuntimeConfig): SidecarClient {
@@ -875,6 +894,7 @@ export function App({
   VisualComponent = VisualEngineHost,
   createSidecarClient = createDefaultSidecarClient,
   initialRuntimeConfig = null,
+  desktopLyricsRuntime = defaultDesktopLyricsRuntime,
 }: AppProps = {}): ReactElement {
   const [sidecarClient, setSidecarClient] = useState<SidecarClient | null>(
     null,
@@ -895,6 +915,9 @@ export function App({
   >([]);
   const [homeForcedOpen, setHomeForcedOpen] = useState(false);
   const [homeSuppressed, setHomeSuppressed] = useState(false);
+  const [diyMode, setDiyMode] = useState(() =>
+    readBooleanPreference(DIY_MODE_STORE_KEY, false),
+  );
   const [playlistPanelOpen, setPlaylistPanelOpen] = useState(false);
   const [playlistPanelTab, setPlaylistPanelTab] = useState<PlaylistPanelTab>("queue");
   const [playlistPanelPinned, setPlaylistPanelPinnedState] = useState(() =>
@@ -972,6 +995,7 @@ export function App({
   const setVisualNumberSetting = useVisualStore((s) => s.setNumberSetting);
   const setVisualBooleanSetting = useVisualStore((s) => s.setBooleanSetting);
   const setVisualStringSetting = useVisualStore((s) => s.setStringSetting);
+  const setVisualFxPatch = useVisualStore((s) => s.setFxPatch);
   const consoleVisible = useUiStore((s) => s.consoleVisible);
   const setConsole = useUiStore((s) => s.setConsole);
   const miniQueueOpen = useUiStore((s) => s.miniQueueOpen);
@@ -1015,7 +1039,13 @@ export function App({
   const setSearchError = useSearchStore((s) => s.setError);
 
   const cancelledRef = useRef(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Create the audio element synchronously on first render so child effects
+  // (e.g. useVisualEngine's initAudioSource) can attach a MediaElementSource
+  // before the App-level PlayerController effect runs. The element is only
+  // created when the DOM supports it; otherwise we keep the ref null.
+  const audioRef = useRef<HTMLAudioElement | null>(
+    typeof Audio !== "undefined" && audioElementSupported() ? new Audio() : null,
+  );
   const controllerRef = useRef<PlayerController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const localAudioUrlsRef = useRef(new Map<string, string>());
@@ -1070,6 +1100,7 @@ export function App({
     isPlaying,
     shelfDetailOpen,
     shelfPinnedOpen: shelfOpen,
+    shelfStageOpen: shelfMode === "stage",
   });
   const emptyHomeActive = shouldShowEmptyHome({
     splashActive,
@@ -1080,6 +1111,7 @@ export function App({
     isPlaying,
     shelfDetailOpen,
     shelfPinnedOpen: shelfOpen,
+    shelfStageOpen: shelfMode === "stage",
   });
   const homeControlsLocked =
     emptyHomeActive &&
@@ -1114,13 +1146,16 @@ export function App({
   }, [setConsole, setMiniQueue, showToast]);
 
   const toggleDiyMode = useCallback(() => {
-    if (typeof document === "undefined") return;
-    const button = document.getElementById("fx-fab");
-    if (button instanceof HTMLButtonElement) {
-      button.click();
-      return;
-    }
-    showToast("视觉控制台暂不可用");
+    setDiyMode((on) => {
+      const next = !on;
+      saveBooleanPreference(DIY_MODE_STORE_KEY, next);
+      if (!next) {
+        setPlaylistPanelOpen(false);
+        setMiniQueue(false);
+      }
+      showToast(next ? "DIY 玩家模式已开启" : "已切回简约模式");
+      return next;
+    });
   }, [showToast]);
 
   const focusSearch = useCallback(() => {
@@ -2433,6 +2468,10 @@ export function App({
     [setShelfMergeCollections, showToast],
   );
 
+  const setDesktopLyricsWindowEnabledRef = useRef<
+    (enabled: boolean) => Promise<void> | void
+  >(() => {});
+
   const updateVisualPreset = useCallback(
     (preset: number) => {
       setVisualPreset(preset);
@@ -2441,12 +2480,29 @@ export function App({
     [setVisualPreset],
   );
 
+  const updateVisualFxPatch = useCallback(
+    (patch: Partial<FxState>) => {
+      setVisualFxPatch(patch);
+      saveVisualFxToStorage();
+    },
+    [setVisualFxPatch],
+  );
+
   const updateVisualNumberSetting = useCallback(
     (key: keyof typeof visualFx, value: number) => {
+      if (key === "backgroundOpacity") {
+        setVisualFxPatch({
+          backgroundOpacity: value,
+          backgroundColorMode: "custom",
+          backgroundColorCustom: true,
+        });
+        saveVisualFxToStorage();
+        return;
+      }
       setVisualNumberSetting(key, value);
       saveVisualFxToStorage();
     },
-    [setVisualNumberSetting],
+    [setVisualFxPatch, setVisualNumberSetting],
   );
 
   const updateVisualBooleanSetting = useCallback(
@@ -2457,6 +2513,9 @@ export function App({
       saveVisualFxToStorage();
       if (key === "shelfShowPodcasts" || key === "shelfMergeCollections")
         saveShelfSettingsToStorage();
+      if (key === "desktopLyrics") {
+        void setDesktopLyricsWindowEnabledRef.current(value);
+      }
       if (key === "aiDepth") {
         showToast(
           value
@@ -2546,9 +2605,9 @@ export function App({
     return buildDesktopLyricSnapshot(payload, playback.positionMs, fallback);
   }, []);
 
-  const toggleDesktopLyrics = useCallback(async () => {
-    if (desktopLyricsEnabled) {
-      await closeDesktopLyricsWindow();
+  const setDesktopLyricsWindowEnabled = useCallback(async (enabled: boolean) => {
+    if (!enabled) {
+      await desktopLyricsRuntime.closeWindow();
       setDesktopLyricsEnabled(false);
       return;
     }
@@ -2589,11 +2648,16 @@ export function App({
         true,
       )
     ) {
-      await updateDesktopLyricsPayload(payload);
+      await desktopLyricsRuntime.updatePayload(payload);
     }
-    await showDesktopLyricsWindow();
+    await desktopLyricsRuntime.showWindow();
     setDesktopLyricsEnabled(true);
-  }, [currentBeatMapState, currentDesktopLyricSnapshot, desktopLyricsEnabled]);
+  }, [currentBeatMapState, currentDesktopLyricSnapshot, desktopLyricsRuntime]);
+  setDesktopLyricsWindowEnabledRef.current = setDesktopLyricsWindowEnabled;
+
+  const toggleDesktopLyrics = useCallback(async () => {
+    await setDesktopLyricsWindowEnabled(!desktopLyricsEnabled);
+  }, [desktopLyricsEnabled, setDesktopLyricsWindowEnabled]);
 
   const executeGlobalHotkeyAction = useCallback(
     (action: string) => {
@@ -2675,6 +2739,18 @@ export function App({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.classList.toggle("diy-mode-preload", diyMode);
+    document.documentElement.classList.toggle("simple-mode-preload", !diyMode);
+    document.body.classList.toggle("diy-mode", diyMode);
+    document.body.classList.toggle("simple-mode", !diyMode);
+    return () => {
+      document.documentElement.classList.remove("diy-mode-preload", "simple-mode-preload");
+      document.body.classList.remove("diy-mode", "simple-mode");
+    };
+  }, [diyMode]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -2806,7 +2882,7 @@ export function App({
     ) {
       return;
     }
-    void updateDesktopLyricsPayload(payload);
+    void desktopLyricsRuntime.updatePayload(payload);
   }, [
     currentDesktopLyricSnapshot,
     desktopLyricsEnabled,
@@ -2817,6 +2893,7 @@ export function App({
     positionMs,
     currentBeatMapState,
     visualFx,
+    desktopLyricsRuntime,
   ]);
 
   useEffect(() => {
@@ -2932,9 +3009,14 @@ export function App({
   useEffect(() => {
     if (!audioElementSupported()) return;
     if (controllerRef.current) return;
-    const audio = new Audio();
+    // Reuse the synchronously-created audio element from the ref; only create
+    // a fresh one if SSR/storage disabled the early creation (audioRef null).
+    let audio = audioRef.current;
+    if (!audio) {
+      audio = new Audio();
+      audioRef.current = audio;
+    }
     audio.preload = "metadata";
-    audioRef.current = audio;
     const controller = new PlayerController(audio);
     const playback = usePlaybackStore.getState();
     controller.setVolume(playback.muted ? 0 : playback.volume);
@@ -3213,6 +3295,7 @@ export function App({
         maximized={desktopWindowState?.isMaximized}
         onGuide={openHomeProductGuide}
         onDiy={toggleDiyMode}
+        diyActive={diyMode}
         onMinimize={() => void minimizeWindow()}
         onToggleMaximize={() => void toggleWindowMaximize()}
         onClose={() => void closeWindow()}
@@ -3294,6 +3377,7 @@ export function App({
         onShelfOpenContentChange={setShelfDetailOpen}
         desktopLyricsMotionRef={desktopLyricsMotionRef}
       />
+      <GuideParticlesHost />
       <div id="ai-depth-chip" className={aiDepthChip.visible ? "show" : ""}>
         <div className="mini-spin" />
         <span id="ai-depth-text">{aiDepthChip.text}</span>
@@ -3313,6 +3397,7 @@ export function App({
         onNumberSettingChange={updateVisualNumberSetting}
         onBooleanSettingChange={updateVisualBooleanSetting}
         onStringSettingChange={updateVisualStringSetting}
+        onFxPatchChange={updateVisualFxPatch}
         onNotice={showNotice}
       />
       <EmptyHomeHost

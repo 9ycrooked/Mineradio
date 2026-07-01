@@ -1,151 +1,127 @@
-# Mineradio Tauri Rewrite
+# MineRadio-Tauri
 
-Mineradio Tauri Rewrite 是 Mineradio 的 GPL-3.0 二开迁移主线，目标是把原 Electron/Node/单体 HTML 桌面音乐播放器迁移到 `Tauri 2 + Rust + WebView2`、Bun workspace、`Vite + TypeScript + React + Zustand`、Bun sidecar runtime、shared types + zod 和 Tauri updater。
+<p align="center">
+  <img src="assets/icons/mine-radio-tauri.svg" width="128" height="128" alt="MineRadio-Tauri icon" />
+</p>
 
-本仓库使用新的 fork/release identity：公开仓库与 updater channel 指向 `zzstar101/Mineradio`。旧 Electron 代码仍作为视觉、交互和能力参考基线保留，但不是 Tauri 主线的运行时兼容对象。
+MineRadio-Tauri 是一款 Windows 桌面沉浸式音乐播放器，结合天气电台、搜索播放、歌词舞台、粒子视觉和 3D 歌单架，提供更接近现场感的私人音乐空间。
 
-## 项目状态
+项目主线基于 Tauri 2 构建，前端、桌面能力、本地服务和共享类型分层开发，重点关注轻量桌面体验、视觉表现、播放稳定性和本地隐私。
 
-当前 Tauri 主线仍在迁移中，尚未达到公开发布条件。
+## 核心特性
 
-- Electron baseline 只作为对照参考，不作为新主线入口。
-- Tauri 主线使用新的 app id、数据目录、仓库和 updater channel。
-- 旧 Electron 安装用户数据不会被自动读取或迁移。
-- 公开发布前必须完成 capability parity、Windows 安装/更新/卸载、视觉对齐和 license gate。
-- 旧 Electron updater、轻量 patch JSON 和 NSIS 发布流程不会迁入 Tauri 主线。
+- 天气电台：根据位置、城市和天气状态组织播放体验。
+- 多源搜索与播放：支持网易云音乐和 QQ 音乐相关能力。
+- 歌词舞台：支持歌词同步、视觉层级、样式和播放状态联动。
+- 沉浸式视觉：粒子舞台、Canvas/WebGL、GSAP 动画和播放态视觉。
+- 3D 歌单架：面向歌单浏览、选择和播放队列的空间化交互。
+- 桌面能力：窗口控制、桌面歌词、系统集成和 Windows 体验。
+- 本地服务：通过 sidecar 处理 provider、音乐 API、天气、音频代理、缓存和诊断。
+- 应用更新：使用 Tauri updater 作为桌面更新机制。
 
-迁移状态以 `docs/migration/CAPABILITY_PARITY_CHECKLIST.md` 为准。
+## 技术栈
 
-## 功能方向
+- Tauri 2、Rust、WebView2
+- Bun workspace
+- Vite、TypeScript、React、Zustand
+- Bun sidecar runtime
+- shared types、zod
+- Canvas / WebGL / GSAP visual engine
+- Tauri updater
 
-- 多平台音乐搜索、播放、歌词和歌单能力迁移。
-- Netease 与 QQ provider adapter，统一 typed API 和错误 envelope。
-- 本地 Bun sidecar，负责 provider、音乐 API、音频代理、天气、缓存和诊断。
-- Tauri/Rust 桌面壳，负责窗口、系统能力、登录 webview、sidecar 生命周期和 updater。
-- React + Zustand 前端壳，承接搜索、队列、播放控制、登录、更新弹窗和视觉控制台。
-- Canvas/WebGL/GSAP visual engine，迁移原 Mineradio 的玻璃控制台、粒子舞台、歌词舞台和 3D 歌单架体验。
-- Tauri updater 发布通道，替代旧 Electron patch JSON 更新链路。
+## 本地开发
 
-## 架构概览
+准备环境：
 
-```text
-apps/
-  desktop/          Tauri 2 Rust app
-  web/              Vite + React + TypeScript UI
-packages/
-  shared/           zod schemas and shared types
-  visual-engine/    Canvas/WebGL/GSAP imperative visual engine
-sidecars/
-  api/              Bun local provider and media API
-public/, desktop/,
-server.js           Electron baseline reference only
-docs/migration/     migration plan, gates, decisions and parity records
-```
-
-核心设计文档：
-
-- `docs/migration/PRD_TAURI_REWRITE.md`
-- `docs/migration/MIGRATION_TAURI_PLAN.md`
-- `docs/migration/CAPABILITY_PARITY_CHECKLIST.md`
-- `docs/migration/DEFERRED_CAPABILITIES.md`
-- `docs/migration/LICENSE_GATE.md`
-- `docs/migration/DECISIONS.md`
-
-## 快速开始
-
-需要先准备：
-
+- Windows 10/11
+- Windows WebView2 Runtime
 - Bun
-- Rust stable toolchain
-- 当前系统对应的 Tauri 2 构建环境
-- Windows 10/11 + WebView2，用于接近发布质量的运行验证
+- Rust stable
+- Tauri 2 CLI
 
 安装依赖：
 
-```bash
+```powershell
 bun install
 ```
 
-启动 Tauri 开发环境：
+启动开发环境：
 
-```bash
-bun run tauri:dev
+```powershell
+bun run dev
 ```
 
-构建前端：
+构建：
 
-```bash
-bun run web:build
+```powershell
+bun run build
 ```
 
-单独启动 sidecar API：
+常用检查：
 
-```bash
-bun run sidecar:dev
+```powershell
+bun run typecheck
+bun test
+cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
 ```
 
-构建桌面应用：
+不同 workspace 或 package 可能有更具体的脚本，请以当前模块声明的脚本为准。
 
-```bash
-bun run tauri:build
+## 项目结构
+
+```text
+MineRadio-Tauri/
+├─ .github/
+│  └─ ISSUE_TEMPLATE/   # Issue 模板
+├─ apps/
+│  ├─ desktop/          # Tauri 2 桌面应用
+│  └─ web/              # Vite + React 前端
+├─ assets/
+│  └─ icons/            # 应用图标源文件
+├─ packages/
+│  ├─ shared/           # shared types + zod schemas
+│  └─ visual-engine/    # Canvas/WebGL/GSAP 视觉引擎
+├─ sidecars/
+│  └─ api/              # Bun sidecar 本地服务
+└─ README.md
 ```
 
-不要用旧 Electron 命令验收 Tauri 主线。`npm start`、`npm run build:win` 和 electron-builder 配置属于 legacy baseline 流程，不是新 Tauri 主线发布验收。
+## 开发原则
 
-## 开发检查
+- React 负责界面状态和用户操作，逐帧视觉渲染由 visual engine 管理。
+- Rust/Tauri 负责窗口、系统能力、sidecar 生命周期和更新。
+- Bun sidecar 负责 provider、音乐 API、天气、音频代理、缓存和诊断。
+- shared 包负责跨层类型、zod schema 和 API 契约。
+- 用户 Cookie、Token、日志和本地隐私数据不得进入仓库。
 
-日常开发常用检查：
+## 第三方音乐平台说明
 
-```bash
-bun test packages/shared
-bun test sidecars/api
-bun test packages/visual-engine
-bun test apps/web
-bun run --filter ./apps/web typecheck
-bun run web:build
-git diff --check
-```
+MineRadio-Tauri 不是网易云音乐、QQ 音乐或腾讯音乐娱乐集团的官方客户端，也不隶属于任何音乐平台。
 
-策略和发布门禁检查：
+项目中的第三方平台接入仅用于个人学习、本地客户端体验和用户自有账号的播放辅助。请遵守对应平台的用户协议、版权规则和会员权益规则。项目不会提供绕过付费、绕过会员、破解音质或重新分发音乐内容的能力。
 
-```bash
-bun run tauri-stack-policy:check
-bun run app-data-policy:check
-bun run installer-policy:check
-bun run release-identity:check
-bun run license:check
-bun run license-transitive:check
-bun run packaged-notices:check
-bun run release-csp:check
-bun run updater-policy:check
-```
+## 用户数据与隐私
 
-如果改动涉及 legacy Electron 参考文件，还需要运行：
+登录 Cookie、搜索历史、自定义封面、自定义歌词、节奏分析缓存和诊断日志等数据应保存在本机应用数据目录或本地存储中。
 
-```bash
-node --check server.js
-```
+提交 Issue、PR、日志或截图前，请确认没有包含 Cookie、Token、账号信息、私密链接、本地隐私路径或可识别个人身份的信息。
+
+更多说明见 [PRIVACY.md](./PRIVACY.md)。
 
 ## 参与贡献
 
-当前项目仍处于迁移期，欢迎贡献小范围、可验证的改动。提交 PR 前请阅读 `CONTRIBUTING.md`，其中包含仓库边界、验证命令、provider 规则、视觉对齐要求和发布门禁说明。
+欢迎提交 Issue、PR、测试反馈和文档改进。开始前请阅读 [贡献指南](./CONTRIBUTING.md)。
 
-适合优先处理的任务通常包括 shared schema、sidecar 测试、策略检查、文档修正，或范围清晰的 UI parity 小任务。大型视觉、provider、updater 或 installer 改动建议先从 issue 或迁移计划条目开始。
+## 致谢
 
-## 第三方平台说明
+MineRadio-Tauri 由 XxHuberrr 主要设计与打造。感谢早期体验、测试反馈和发布准备中提供帮助的朋友们。
 
-Mineradio Tauri Rewrite 不是网易云音乐、QQ 音乐、腾讯音乐娱乐集团或任何第三方音乐平台的官方客户端。
+## 版权与授权
 
-项目中的第三方平台接入仅用于个人学习、本地桌面客户端体验，以及在平台规则允许范围内辅助用户使用自有账号播放内容。不要使用本项目绕过付费、会员、版权、DRM、音质限制或平台条款。
+Copyright (C) 2026 XxHuberrr.
 
-## 隐私
+本项目采用 GPL-3.0 授权。详见 [LICENSE](./LICENSE)。
 
-登录 Cookie、搜索历史、自定义封面、自定义歌词、节奏分析缓存和诊断数据应保留在用户本机。不要提交 cookies、tokens、个人账号数据、本地 app data 目录，或包含隐私信息的生成日志。
-
-当前隐私说明见 `PRIVACY.md`。
-
-## 许可
-
-Mineradio Tauri Rewrite 使用 GPL-3.0 发布。详见 `LICENSE`、`NOTICE.md` 和 `THIRD_PARTY_NOTICES.md`。
-
-原 Mineradio 由 XxHuberrr 主要设计与打造。Mineradio 名称、MR Logo、界面设计和原创视觉表达继续归属并署名原作者。本 fork/rewrite 通过 `Mineradio Tauri Rewrite` 产品名、`com.mineradio.fork.tauri` app id 和 `zzstar101/Mineradio` 发布通道保持清晰的修改版身份。
+MineRadio-Tauri 名称、界面视觉设计与原创视觉表达归作者所有；第三方依赖和第三方服务分别遵循其各自授权与服务条款。

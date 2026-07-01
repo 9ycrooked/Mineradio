@@ -1,9 +1,11 @@
 import { useEffect, useRef, type RefObject } from "react";
+import * as THREE from "three";
 import {
 	createAudioReactivity,
 	createBeatMapScheduler,
 	createCinemaCamera,
 	createConnectorParticles,
+	createLyricParticles,
 	createHomeVisual,
 	createDefaultFreeCameraState,
 	cloneFxState,
@@ -27,6 +29,7 @@ import {
 	type HomeVisual,
 	type LyricLine as VisualLyricLine,
 	type LyricPalette,
+	type LyricParticles,
 	type RendererHandle,
 	type RenderLoop,
 	type ConnectorParticles,
@@ -105,6 +108,7 @@ interface MountedHandles {
 	homeVisual: HomeVisual;
 	shelfManager: ShelfManager;
 	connectorParticles: ConnectorParticles;
+	lyricParticles: LyricParticles;
 	lifecycle: StageLyricsLifecycle;
 	renderLoop: RenderLoop;
 	shelfSelectSound: ShelfSelectSoundPlayer | null;
@@ -112,14 +116,31 @@ interface MountedHandles {
 	offHome: () => void;
 	offCamera: () => void;
 	offShelf: () => void;
+	offLyricParticles: () => void;
 	offLyrics: () => void;
 	offAudio: () => void;
 	offHomeAudio: () => void;
+	offAudioSource: () => void;
 	offResize: () => void;
 	offShelfFocus: () => void;
 	offShelfPointerInteractions: () => void;
 	offFreeCamera: () => void;
+	offCanvasPointer: () => void;
 }
+
+const VISUAL_COVER_RETRY_INTERVAL_MS = 2200;
+const BASELINE_AUDIO_SOURCE_KEY = "_mineradioMediaSource";
+const BASELINE_AUDIO_CONTEXT_KEY = "_mineradioAudioCtx";
+
+type BaselineAudioElement = HTMLAudioElement & {
+	[BASELINE_AUDIO_SOURCE_KEY]?: MediaElementAudioSourceNode;
+	[BASELINE_AUDIO_CONTEXT_KEY]?: AudioContext;
+};
+
+export type ManagedAudioFrameSource = AudioFrameSource & {
+	audioContext: AudioContext | null;
+	dispose(): void;
+};
 
 function prefersReducedMotion(): boolean {
 	if (typeof window === "undefined") return false;
@@ -204,7 +225,7 @@ export function createStageLyricsShelfSuppliers(input: StageLyricsShelfSupplierI
 	};
 }
 
-async function initAudioSource(el: HTMLAudioElement | null): Promise<AudioFrameSource> {
+export async function initAudioSource(getEl: () => HTMLAudioElement | null): Promise<ManagedAudioFrameSource> {
 	if (typeof window === "undefined") return makeFallbackFrameSource();
 	const AudioCtor =
 		(window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ??
@@ -212,8 +233,12 @@ async function initAudioSource(el: HTMLAudioElement | null): Promise<AudioFrameS
 	if (typeof AudioCtor !== "function") return makeFallbackFrameSource();
 
 	let ctx: AudioContext;
+	let initialEl: BaselineAudioElement | null = null;
 	try {
-		ctx = new AudioCtor();
+		initialEl = getEl() as BaselineAudioElement | null;
+		const cachedCtx = initialEl?.[BASELINE_AUDIO_CONTEXT_KEY];
+		ctx = cachedCtx && cachedCtx.state !== "closed" ? cachedCtx : new AudioCtor();
+		if (initialEl) initialEl[BASELINE_AUDIO_CONTEXT_KEY] = ctx;
 	} catch {
 		return makeFallbackFrameSource();
 	}
@@ -224,26 +249,75 @@ async function initAudioSource(el: HTMLAudioElement | null): Promise<AudioFrameS
 	const beatAnalyser = ctx.createAnalyser();
 	beatAnalyser.fftSize = 2048;
 	beatAnalyser.smoothingTimeConstant = 0.10;
+	// 原版 initAudio（public/index.html:17730-17742）的连接是
+	// source -> analyser -> gainNode -> destination，并额外连接
+	// source -> beatAnalyser。beatAnalyser 只做分析，不接 destination。
+	// gainNode 是音量控制；缺少它时 MediaElementSource 路径没有可控输出，
+	// 部分 WebView 会把这条路径静音。
+	const gainNode = ctx.createGain();
+	gainNode.gain.value = 1;
+	mainAnalyser.connect(gainNode);
+	gainNode.connect(ctx.destination);
 
+	// useVisualEngine 挂载时 audio 元素可能还不存在，也可能被替换
+	//（例如 React StrictMode 重新挂载时创建新的 Audio）。同一个元素在同一个
+	// AudioContext 里只能 createMediaElementSource 一次，所以这里懒连接，
+	// 并在元素变化时重新连接。
 	let source: MediaElementAudioSourceNode | null = null;
-	if (el) {
+	let sourceEl: BaselineAudioElement | null = null;
+	let sourceAttachFailed = false;
+	const ensureSource = (): void => {
+		const el = getEl() as BaselineAudioElement | null;
+		if (!el) return;
+		if (source && sourceEl === el) return; // 已经连接到这个元素
+		if (sourceAttachFailed && sourceEl === el) return; // 这个元素已经连接失败
+		// 元素变化（或首次连接）时，断开旧 source 后再连接新的。
+		if (source && sourceEl !== el) {
+			try { source.disconnect(); } catch { void 0; }
+			source = null;
+			sourceEl = null;
+		}
 		try {
-			source = ctx.createMediaElementSource(el);
+			const cachedCtx = el[BASELINE_AUDIO_CONTEXT_KEY];
+			const cachedSource = el[BASELINE_AUDIO_SOURCE_KEY];
+			if (cachedSource && cachedCtx === ctx && ctx.state !== "closed") {
+				source = cachedSource;
+				try { source.disconnect(); } catch { void 0; }
+			} else {
+				source = ctx.createMediaElementSource(el);
+				el[BASELINE_AUDIO_SOURCE_KEY] = source;
+				el[BASELINE_AUDIO_CONTEXT_KEY] = ctx;
+			}
 			source.connect(mainAnalyser);
 			source.connect(beatAnalyser);
-			mainAnalyser.connect(ctx.destination);
-			beatAnalyser.connect(ctx.destination);
+			// mainAnalyser -> gainNode -> destination 已在上方连接；
+			// beatAnalyser 只做分析（原版不接 destination），这里不连接输出。
+			sourceEl = el;
+			sourceAttachFailed = false;
 		} catch {
-			source = null;
+			// 元素可能已被另一个 context 占用，或 context 状态异常。
+			// 对当前元素标记失败，避免每帧重复尝试。
+			sourceAttachFailed = true;
+			sourceEl = el;
 		}
-	}
+	};
 
 	const mainFreq = new Uint8Array(mainAnalyser.frequencyBinCount);
 	const mainTime = new Uint8Array(mainAnalyser.fftSize);
 	const beatFreq = new Uint8Array(beatAnalyser.frequencyBinCount);
 	const beatTime = new Uint8Array(beatAnalyser.fftSize);
 
-	return function frameSource(): AudioFrameBytes {
+	const frameSource = function frameSource(): AudioFrameBytes {
+		ensureSource();
+		const el = sourceEl ?? getEl();
+		const playing = !!(el && !el.paused && !el.ended);
+		// MediaElementSource routes audio through this AudioContext. If the
+		// context is suspended (browser autoplay policy), the routed audio is
+		// silent until the context resumes. A user gesture (play click) has
+		// already happened by the time `playing` is true, so resume is allowed.
+		if (playing && ctx.state === "suspended") {
+			void ctx.resume().catch(() => {});
+		}
 		try {
 			mainAnalyser.getByteFrequencyData(mainFreq);
 			mainAnalyser.getByteTimeDomainData(mainTime);
@@ -263,7 +337,6 @@ async function initAudioSource(el: HTMLAudioElement | null): Promise<AudioFrameS
 				currentTimeSeconds: 0,
 			};
 		}
-		const playing = !!(el && !el.paused && !el.ended);
 		const currentTimeSeconds = el ? el.currentTime : 0;
 		return {
 			mainFreqData: mainFreq,
@@ -277,12 +350,22 @@ async function initAudioSource(el: HTMLAudioElement | null): Promise<AudioFrameS
 			playing,
 			currentTimeSeconds,
 		};
+	} as ManagedAudioFrameSource;
+	frameSource.audioContext = ctx;
+	frameSource.dispose = () => {
+		try { source?.disconnect(); } catch { void 0; }
+		try { mainAnalyser.disconnect(); } catch { void 0; }
+		try { beatAnalyser.disconnect(); } catch { void 0; }
+		try { gainNode.disconnect(); } catch { void 0; }
+		source = null;
+		sourceEl = null;
 	};
+	return frameSource;
 }
 
-function makeFallbackFrameSource(): AudioFrameSource {
+function makeFallbackFrameSource(): ManagedAudioFrameSource {
 	const empty = new Uint8Array(0);
-	return function fallbackFrame(): AudioFrameBytes {
+	const fallbackFrame = function fallbackFrame(): AudioFrameBytes {
 		return {
 			mainFreqData: empty,
 			mainTimeData: empty,
@@ -295,6 +378,180 @@ function makeFallbackFrameSource(): AudioFrameSource {
 			playing: false,
 			currentTimeSeconds: 0,
 		};
+	};
+	fallbackFrame.audioContext = null;
+	fallbackFrame.dispose = () => {};
+	return fallbackFrame;
+}
+
+export function shouldResetLyricStageCameraView(input: {
+	wasHomeActive: boolean;
+	homeActive: boolean;
+	playbackActive: boolean;
+}): boolean {
+	return input.wasHomeActive && !input.homeActive && input.playbackActive;
+}
+
+export function readVisualCurrentTimeSeconds(audio: HTMLAudioElement | null | undefined, fallbackPositionMs: number): number {
+	const audioTime = Number(audio?.currentTime);
+	if (Number.isFinite(audioTime) && audioTime >= 0) return audioTime;
+	const fallback = Number(fallbackPositionMs);
+	return Number.isFinite(fallback) && fallback > 0 ? fallback / 1000 : 0;
+}
+
+export function shouldRetryVisualCoverLoad(input: {
+	coverUrl: string | null | undefined;
+	hasCover: number;
+	nowMs: number;
+	lastAttemptAtMs: number;
+	lastAttemptUrl: string;
+	intervalMs?: number;
+}): boolean {
+	const coverUrl = String(input.coverUrl ?? "").trim();
+	if (!coverUrl) return false;
+	if (Number(input.hasCover) > 0.5) return false;
+	if (coverUrl !== input.lastAttemptUrl) return true;
+	const interval = Math.max(250, input.intervalMs ?? VISUAL_COVER_RETRY_INTERVAL_MS);
+	return input.nowMs - input.lastAttemptAtMs >= interval;
+}
+
+function attachBaselineCanvasPointerInput(input: {
+	target: HTMLElement;
+	windowTarget: Window;
+	homeVisual: HomeVisual;
+	cinema: CinemaCamera;
+	freeCamera: ReturnType<typeof createDefaultFreeCameraState>;
+	camera: THREE.PerspectiveCamera;
+	pointerTarget: { x: number; y: number };
+	isPointerOverUi: (event: MouseEvent | WheelEvent) => boolean;
+}): () => void {
+	let rotating = false;
+	let lastX = 0;
+	let lastY = 0;
+	let lastT = 0;
+	const pointerNdc = new THREE.Vector2();
+	const raycaster = new THREE.Raycaster();
+	const plane = new THREE.Plane();
+	const planePoint = new THREE.Vector3();
+	const planeNormal = new THREE.Vector3();
+	const worldHit = new THREE.Vector3();
+	const localHit = new THREE.Vector3();
+	const worldQuat = new THREE.Quaternion();
+
+	const particleLocalPointFromNdc = (ndcX: number, ndcY: number): { x: number; y: number } | null => {
+		pointerNdc.set(ndcX, ndcY);
+		raycaster.setFromCamera(pointerNdc, input.camera);
+		const points = input.homeVisual.getField().points as unknown as THREE.Points;
+		if (points) {
+			points.updateMatrixWorld(true);
+			points.getWorldPosition(planePoint);
+			points.getWorldQuaternion(worldQuat);
+			planeNormal.set(0, 0, 1).applyQuaternion(worldQuat).normalize();
+			if (Math.abs(planeNormal.dot(raycaster.ray.direction)) >= 0.16) {
+				plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+				if (raycaster.ray.intersectPlane(plane, worldHit)) {
+					localHit.copy(worldHit);
+					points.worldToLocal(localHit);
+					if (Number.isFinite(localHit.x) && Number.isFinite(localHit.y) && Math.abs(localHit.x) < 8.5 && Math.abs(localHit.y) < 8.5) {
+						return { x: localHit.x, y: localHit.y };
+					}
+				}
+			}
+		}
+		planeNormal.set(0, 0, 1);
+		plane.set(planeNormal, 0);
+		if (raycaster.ray.intersectPlane(plane, worldHit)) {
+			if (Number.isFinite(worldHit.x) && Number.isFinite(worldHit.y) && Math.abs(worldHit.x) < 8.5 && Math.abs(worldHit.y) < 8.5) {
+				return { x: worldHit.x, y: worldHit.y };
+			}
+		}
+		return null;
+	};
+
+	const updatePointerTarget = (clientX: number, clientY: number) => {
+		const width = Math.max(1, input.windowTarget.innerWidth || input.target.clientWidth || 1);
+		const height = Math.max(1, input.windowTarget.innerHeight || input.target.clientHeight || 1);
+		const ndcX = (clientX / width) * 2 - 1;
+		const ndcY = -(clientY / height) * 2 + 1;
+		input.pointerTarget.x = ndcX;
+		input.pointerTarget.y = ndcY;
+		const fx = input.homeVisual.getFx();
+		const local = particleLocalPointFromNdc(ndcX, ndcY);
+		if (local) {
+			fx.mouseActive = true;
+			fx.mouseXy = local;
+		} else {
+			fx.mouseActive = false;
+			fx.mouseXy = { x: -999, y: -999 };
+		}
+	};
+
+	const clearPointer = () => {
+		const fx = input.homeVisual.getFx();
+		fx.mouseActive = false;
+		fx.mouseXy = { x: -999, y: -999 };
+	};
+
+	const onMouseDown = (event: MouseEvent) => {
+		if (event.button === 2 || input.isPointerOverUi(event)) return;
+		rotating = true;
+		lastX = event.clientX;
+		lastY = event.clientY;
+		lastT = performance.now();
+		input.cinema.getState().orbit.rotating = true;
+		updatePointerTarget(event.clientX, event.clientY);
+	};
+
+	const onMouseMove = (event: MouseEvent) => {
+		if (input.isPointerOverUi(event) && !rotating) {
+			clearPointer();
+			return;
+		}
+		updatePointerTarget(event.clientX, event.clientY);
+		if (!rotating || input.freeCamera.active) return;
+		const now = performance.now();
+		const dt = Math.max(1 / 120, Math.min(0.08, (now - lastT) / 1000 || 1 / 60));
+		input.homeVisual.applyPointerSpinDrag(event.clientX - lastX, event.clientY - lastY, dt);
+		const orbit = input.cinema.getState().orbit;
+		orbit.centerLocked = false;
+		orbit.rotating = true;
+		lastX = event.clientX;
+		lastY = event.clientY;
+		lastT = now;
+	};
+
+	const endDrag = () => {
+		rotating = false;
+		input.cinema.getState().orbit.rotating = false;
+	};
+
+	const onMouseLeave = () => {
+		clearPointer();
+		endDrag();
+	};
+
+	const onWheel = (event: WheelEvent) => {
+		if (input.isPointerOverUi(event) || input.freeCamera.active) return;
+		event.preventDefault();
+		const orbit = input.cinema.getState().orbit;
+		orbit.centerLocked = false;
+		if (input.homeVisual.applySkullWheel(event.deltaY)) return;
+		orbit.userRadius = Math.max(orbit.minRadius, Math.min(orbit.maxRadius, orbit.userRadius + event.deltaY * 0.005));
+	};
+
+	input.target.addEventListener("mousedown", onMouseDown);
+	input.windowTarget.addEventListener("mousemove", onMouseMove);
+	input.windowTarget.addEventListener("mouseup", endDrag);
+	input.windowTarget.addEventListener("blur", endDrag);
+	input.target.addEventListener("mouseleave", onMouseLeave);
+	input.target.addEventListener("wheel", onWheel, { passive: false });
+	return () => {
+		input.target.removeEventListener("mousedown", onMouseDown);
+		input.windowTarget.removeEventListener("mousemove", onMouseMove);
+		input.windowTarget.removeEventListener("mouseup", endDrag);
+		input.windowTarget.removeEventListener("blur", endDrag);
+		input.target.removeEventListener("mouseleave", onMouseLeave);
+		input.target.removeEventListener("wheel", onWheel);
 	};
 }
 
@@ -499,8 +756,20 @@ export function resolveHomeVisualPreset(
 	currentPreset: number,
 	defaultPreset: number,
 	previousPreset: number | null,
-	opts: { playbackActive?: boolean; playbackPreset?: number | null } = {},
+	opts: {
+		playbackActive?: boolean;
+		playbackPreset?: number | null;
+		previewEnabled?: boolean;
+		committedPresetChanged?: boolean;
+	} = {},
 ): { preset: number; previousPreset: number | null; changed: boolean } {
+	if (homeActive && (opts.previewEnabled === false || opts.committedPresetChanged)) {
+		return {
+			preset: defaultPreset,
+			previousPreset: null,
+			changed: currentPreset !== defaultPreset,
+		};
+	}
 	if (homeActive) {
 		const nextPreviousPreset = previousPreset ?? currentPreset;
 		return {
@@ -562,6 +831,10 @@ function disposeHandles(handles: MountedHandles | null): void {
 	} catch {
 	}
 	try {
+		handles.offLyricParticles();
+	} catch {
+	}
+	try {
 		handles.offLyrics();
 	} catch {
 	}
@@ -590,6 +863,10 @@ function disposeHandles(handles: MountedHandles | null): void {
 	} catch {
 	}
 	try {
+		handles.offCanvasPointer();
+	} catch {
+	}
+	try {
 		handles.lifecycle.dispose();
 	} catch {
 	}
@@ -606,6 +883,10 @@ function disposeHandles(handles: MountedHandles | null): void {
 	} catch {
 	}
 	try {
+		handles.lyricParticles.dispose();
+	} catch {
+	}
+	try {
 		handles.cinema.dispose();
 	} catch {
 	}
@@ -614,17 +895,15 @@ function disposeHandles(handles: MountedHandles | null): void {
 	} catch {
 	}
 	try {
+		handles.offAudioSource();
+	} catch {
+	}
+	try {
 		handles.renderLoop.dispose();
 	} catch {
 	}
 	try {
 		handles.renderer.dispose();
-	} catch {
-	}
-	try {
-		if (handles.audioContext && handles.audioContext.state !== "closed") {
-			void handles.audioContext.close();
-		}
 	} catch {
 	}
 }
@@ -641,8 +920,9 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 		let cancelled = false;
 
 		void (async () => {
-			const frameSource = await initAudioSource(refs.audioElementRef.current);
+			const frameSource = await initAudioSource(() => refs.audioElementRef.current);
 			if (cancelled || disposedRef.current) {
+				frameSource.dispose();
 				return;
 			}
 			const audioEngine = createAudioReactivity({
@@ -652,6 +932,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			const renderer = await createRenderer(host, {});
 			if (cancelled || disposedRef.current) {
 				audioEngine.dispose();
+				frameSource.dispose();
 				renderer.dispose();
 				return;
 			}
@@ -693,6 +974,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				coverResolution: refs.coverResolution,
 				fx: runtimeFx,
 				estimateAiDepth: aiDepthEstimatorRef.current ?? undefined,
+				orbitCenterLockedSupplier: () => cinema.getState().orbit.centerLocked,
 				onCoverLyricPalette: (palette) => {
 					latestCoverLyricPalette = palette;
 					lastAppliedLyricPaletteKey = "";
@@ -701,11 +983,27 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			});
 			let homeVisualPreviousPreset: number | null = null;
 			let homeVisualPreviewActive = false;
+			let homePresetPreviewEnabled = false;
+			let homePresetPreviewSourcePreset: number | null = null;
 			let syncedCoverUrlVersion = refs.coverUrlVersionRef?.current ?? 0;
-			homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
+			const syncHomeVisualPixelRatio = () => {
+				const pixelRatio = renderer.renderer.getPixelRatio?.() ?? 1;
+				const uniforms = homeVisual.getField().materialUniforms;
+				if (uniforms.uPixel) uniforms.uPixel.value = pixelRatio;
+			};
+			syncHomeVisualPixelRatio();
+			let lastCoverLoadAttemptUrl = refs.coverUrlRef?.current ?? "";
+			let lastCoverLoadAttemptAt = performance.now();
+			const requestHomeVisualCover = (coverUrl: string, nowMs = performance.now()) => {
+				lastCoverLoadAttemptUrl = coverUrl;
+				lastCoverLoadAttemptAt = nowMs;
+				homeVisual.setCoverUrl(coverUrl);
+			};
+			requestHomeVisualCover(lastCoverLoadAttemptUrl, lastCoverLoadAttemptAt);
 			if (cancelled || disposedRef.current) {
 				homeVisual.dispose();
 				audioEngine.dispose();
+				frameSource.dispose();
 				cinema.dispose();
 				offResize();
 				renderer.dispose();
@@ -715,6 +1013,17 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			const shelfManager = await createShelfManagerWithThree({
 				scene: renderer.scene,
 				document,
+				getLayoutProfileOverrides: () => {
+					const width = window.innerWidth || host.clientWidth || 0;
+					const height = window.innerHeight || host.clientHeight || 0;
+					const portrait = height > width * 1.08;
+					const fx = mergeFxState(mergeFxState(cloneFxState(), refs.fxDefaults), refs.fxRef?.current);
+					return {
+						portrait,
+						narrow: !portrait && width > 0 && width < 980,
+						skullSafe: Number(fx.preset) === 6,
+					};
+				},
 				onOpenDetailContent: (payload) => {
 					const contentList = shelfManagerForCallback?.getContentList();
 					if (contentList) {
@@ -727,6 +1036,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				shelfManager.dispose();
 				homeVisual.dispose();
 				audioEngine.dispose();
+				frameSource.dispose();
 				cinema.dispose();
 				offResize();
 				renderer.dispose();
@@ -734,6 +1044,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			}
 			const connectorParticles = await createConnectorParticles({
 				scene: renderer.scene,
+				dotTexture: homeVisual.getField().materialUniforms.uDotTex?.value ?? null,
 			});
 			if (connectorParticles.object) {
 				connectorParticles.object.visible = false;
@@ -744,6 +1055,26 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				shelfManager.dispose();
 				homeVisual.dispose();
 				audioEngine.dispose();
+				frameSource.dispose();
+				cinema.dispose();
+				offResize();
+				renderer.dispose();
+				return;
+			}
+			const lyricParticles = await createLyricParticles({
+				scene: renderer.scene,
+				pixelScale: 1,
+			});
+			if (lyricParticles.object) {
+				lyricParticles.object.visible = runtimeFx.particleLyrics !== false;
+			}
+			if (cancelled || disposedRef.current) {
+				lyricParticles.dispose();
+				connectorParticles.dispose();
+				shelfManager.dispose();
+				homeVisual.dispose();
+				audioEngine.dispose();
+				frameSource.dispose();
 				cinema.dispose();
 				offResize();
 				renderer.dispose();
@@ -751,7 +1082,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			}
 			const lifecycle = createStageLyricsLifecycle({
 				scene: renderer.scene,
-				currentTimeSupplier: () => refs.positionRef.current / 1000,
+				currentTimeSupplier: () => readVisualCurrentTimeSeconds(refs.audioElementRef.current, refs.positionRef.current),
 				isPlayingSupplier: () => refs.isPlayingRef.current,
 				lyricLinesSupplier: () => refs.lyricLinesRef.current,
 				...createStageLyricsHostSuppliers(refs),
@@ -782,12 +1113,30 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				},
 				skullMouthTransformSupplier: () => homeVisual.getSkullMouthTransform(),
 				skullBeatFlashSupplier: () => homeVisual.getSkullBeatFlash(),
+				getBeatCamKick: () => cinema.getState().beatCam,
 				coverWorldTransformSupplier: () => {
 					const points = homeVisual.getField().points;
 					return {
 						position: points.position,
 						quaternion: points.quaternion,
 						updateMatrixWorld: (force?: boolean) => points.updateMatrixWorld(force),
+						getWorldPosition: (target: { x: number; y: number; z: number }) => {
+							const worldPosition = points.position.clone();
+							points.getWorldPosition(worldPosition);
+							target.x = worldPosition.x;
+							target.y = worldPosition.y;
+							target.z = worldPosition.z;
+							return target;
+						},
+						getWorldQuaternion: (target: { x: number; y: number; z: number; w: number }) => {
+							const worldQuaternion = points.quaternion.clone();
+							points.getWorldQuaternion(worldQuaternion);
+							target.x = worldQuaternion.x;
+							target.y = worldQuaternion.y;
+							target.z = worldQuaternion.z;
+							target.w = worldQuaternion.w;
+							return target;
+						},
 					};
 				},
 				cameraSupplier: () => renderer.camera,
@@ -798,6 +1147,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			let syncedShelfItemsVersion = refs.shelfItemsVersionRef.current;
 			let syncedBeatMapVersion = refs.beatMapVersionRef?.current ?? 0;
 			let syncedShelfContentOpen = false;
+			const pointerTarget = { x: 0, y: 0 };
+			const pointerParallax = { x: 0, y: 0 };
 			shelfManager.setData(refs.shelfItemsRef.current);
 			const beatMapScheduler = createBeatMapScheduler({
 				scheduleCameraBeat: (beat) => cinema.applyBeat(Math.max(Number(beat.strength) || 0, Number(beat.impact) || 0), true),
@@ -822,6 +1173,8 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				scene: renderer.scene,
 				camera: renderer.camera,
 				audio: audioEngine,
+				pointerTarget,
+				pointerParallax,
 				isMainSceneCoveredBySplash: () => refs.splashActiveRef.current,
 				getAdaptiveFps: () => 0,
 				prefersReducedMotion,
@@ -836,25 +1189,64 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 					);
 				}
 				audioEngine.update(ctx.dt);
-				beatMapScheduler.update((refs.positionRef.current ?? 0) / 1000);
+				beatMapScheduler.update(readVisualCurrentTimeSeconds(refs.audioElementRef.current, refs.positionRef.current));
 			});
 			const offHome = renderLoop.registerStep(RenderStepSlot.HomeVisual, (ctx) => {
 				mergeFxState(homeVisual.getFx(), refs.fxRef?.current);
+				syncHomeVisualPixelRatio();
+				const uniforms = homeVisual.getField().materialUniforms as Record<string, { value: unknown }>;
+				const currentCoverUrl = refs.coverUrlRef?.current ?? "";
 				if (refs.coverUrlVersionRef && syncedCoverUrlVersion !== refs.coverUrlVersionRef.current) {
 					syncedCoverUrlVersion = refs.coverUrlVersionRef.current;
-					homeVisual.setCoverUrl(refs.coverUrlRef?.current ?? "");
+					requestHomeVisualCover(currentCoverUrl, ctx.now);
+				} else if (shouldRetryVisualCoverLoad({
+					coverUrl: currentCoverUrl,
+					hasCover: Number(uniforms.uHasCover?.value ?? 0),
+					nowMs: ctx.now,
+					lastAttemptAtMs: lastCoverLoadAttemptAt,
+					lastAttemptUrl: lastCoverLoadAttemptUrl,
+				})) {
+					requestHomeVisualCover(currentCoverUrl, ctx.now);
 				}
 				applyStageLyricPalette();
 				const homeActive = refs.homeActiveRef?.current === true;
+				const wasHomePreviewActive = homeVisualPreviewActive;
 				const enteringHomePreview = homeActive && !homeVisualPreviewActive;
+				const committedPreset = homeVisual.getFx().preset ?? refs.fxDefaults?.preset ?? 0;
+				if (enteringHomePreview) {
+					homePresetPreviewEnabled = true;
+					homePresetPreviewSourcePreset = committedPreset;
+				}
+				const committedPresetChanged =
+					homeActive &&
+					homePresetPreviewEnabled &&
+					homePresetPreviewSourcePreset !== null &&
+					committedPreset !== homePresetPreviewSourcePreset;
+				if (committedPresetChanged) {
+					homePresetPreviewEnabled = false;
+					homeVisualPreviousPreset = null;
+					homePresetPreviewSourcePreset = committedPreset;
+					cinema.setPresetCameraBaseline(committedPreset);
+				}
+				if (!homeActive) {
+					homePresetPreviewEnabled = false;
+					homePresetPreviewSourcePreset = null;
+				}
+				const resettingToLyricStage = shouldResetLyricStageCameraView({
+					wasHomeActive: wasHomePreviewActive,
+					homeActive,
+					playbackActive: refs.isPlayingRef.current || !!currentCoverUrl,
+				});
 				const preset = resolveHomeVisualPreset(
 					homeActive,
 					homeVisual.getPreset(),
-					homeVisual.getFx().preset ?? refs.fxDefaults?.preset ?? 0,
+					committedPreset,
 					homeVisualPreviousPreset,
 					{
 						playbackActive: refs.isPlayingRef.current,
-						playbackPreset: homeVisual.getFx().preset ?? refs.fxDefaults?.preset ?? 0,
+						playbackPreset: committedPreset,
+						previewEnabled: homePresetPreviewEnabled,
+						committedPresetChanged,
 					},
 				);
 				if (preset.changed) {
@@ -868,9 +1260,12 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				} else if (enteringHomePreview) {
 					cinema.setPresetCameraBaseline(preset.preset);
 				}
+				if (resettingToLyricStage) {
+					cinema.resetLyricStageCoverWallView();
+					lifecycle.requestCameraSnap(14);
+				}
 				homeVisualPreviousPreset = preset.previousPreset;
 				homeVisualPreviewActive = homeActive;
-				const uniforms = homeVisual.getField().materialUniforms as Record<string, { value: unknown }>;
 				if (homeVisualPreviewActive) {
 					if (typeof uniforms.uAlpha?.value === "number" && uniforms.uAlpha.value < 0.96) {
 						uniforms.uAlpha.value = 0.96;
@@ -913,7 +1308,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 							pinnedOpen: shelfManager.getShelfPinnedOpen(),
 							hasOpenContent: shelfManager.hasOpenContent(),
 						}),
-						zoom: 0,
+						zoom: homeVisual.getSkullWheelZoom(),
 					});
 				}
 			});
@@ -946,6 +1341,12 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				}
 				connectorParticles.setIntensity(connectorVisible ? shelfManager.getShelfVisibility() : 0);
 				connectorParticles.update(ctx);
+			});
+			const offLyricParticles = renderLoop.registerStep(RenderStepSlot.LyricParticles, (ctx) => {
+				const fx = mergeFxState(mergeFxState(cloneFxState(), refs.fxDefaults), refs.fxRef?.current);
+				if (lyricParticles.object) lyricParticles.object.visible = fx.particleLyrics !== false;
+				lyricParticles.setGlowStrength(fx.lyricGlow ? Math.min(0.85, Math.max(0, Number(fx.lyricGlowStrength) || 0)) : 0.28);
+				lyricParticles.update(ctx);
 			});
 			const offLyrics = renderLoop.registerStep(RenderStepSlot.StageLyrics, (ctx) => {
 				lifecycle.update(ctx);
@@ -991,6 +1392,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 			if (cancelled || disposedRef.current) {
 				offAudio();
 				offLyrics();
+				offLyricParticles();
 				offShelf();
 				offCamera();
 				offHome();
@@ -998,10 +1400,12 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				offResize();
 				renderLoop.dispose();
 				lifecycle.dispose();
+				lyricParticles.dispose();
 				connectorParticles.dispose();
 				shelfManager.dispose();
 				homeVisual.dispose();
 				audioEngine.dispose();
+				frameSource.dispose();
 				cinema.dispose();
 				renderer.dispose();
 				return;
@@ -1064,16 +1468,27 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 					}
 				},
 			});
+			const isPointerOverRuntimeUi = (event: MouseEvent | WheelEvent) => {
+				const el = document.elementFromPoint(event.clientX, event.clientY);
+				return !!(el && el.closest?.("#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay"));
+			};
+			const offCanvasPointer = attachBaselineCanvasPointerInput({
+				target: renderer.renderer.domElement,
+				windowTarget: window,
+				homeVisual,
+				cinema,
+				freeCamera,
+				camera: renderer.camera,
+				pointerTarget,
+				isPointerOverUi: isPointerOverRuntimeUi,
+			});
 			const offFreeCamera = attachFreeCameraHost({
 				target: window,
 				wheelTarget: renderer.renderer.domElement,
 				state: freeCamera,
 				getCameraPose: () => createFreeCameraPoseFromPerspectiveCamera(renderer.camera),
 				getNowMs: () => performance.now(),
-				isPointerOverUi: (event) => {
-					const el = document.elementFromPoint(event.clientX, event.clientY);
-					return !!(el && el.closest?.("#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay"));
-				},
+				isPointerOverUi: isPointerOverRuntimeUi,
 			});
 			handles = {
 				renderer,
@@ -1082,6 +1497,7 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				homeVisual,
 				shelfManager,
 				connectorParticles,
+				lyricParticles,
 				lifecycle,
 				renderLoop,
 				shelfSelectSound,
@@ -1089,13 +1505,16 @@ export function useVisualEngine(refs: VisualEngineRefs): void {
 				offHome,
 				offCamera,
 				offShelf,
+				offLyricParticles,
 				offLyrics,
 				offAudio,
 				offHomeAudio,
+				offAudioSource: () => frameSource.dispose(),
 				offResize,
 				offShelfFocus,
 				offShelfPointerInteractions,
 				offFreeCamera,
+				offCanvasPointer,
 			};
 			renderLoop.start();
 		})();

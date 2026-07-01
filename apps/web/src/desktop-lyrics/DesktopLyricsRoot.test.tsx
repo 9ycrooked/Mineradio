@@ -58,7 +58,7 @@ test("isDesktopLyricsRoute detects overlay route forms", () => {
 
 test("DesktopLyricsRoot renders default payload through injectable bridge", () => {
 	const html = renderToStaticMarkup(React.createElement(DesktopLyricsRoot, { bridge: createNoopBridge() }));
-	expect(html).toContain("Mineradio");
+	expect(html).toContain("MineRadio-Tauri");
 	expect(html).toContain("desktop-lyrics-locked");
 });
 

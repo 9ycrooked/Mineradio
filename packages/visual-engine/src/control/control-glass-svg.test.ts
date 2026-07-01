@@ -6,6 +6,7 @@ import {
 	CONTROL_GLASS_FILTER_DEFS_MARKUP,
 	SEARCH_BOX_GLASS_FILTER_MARKUP,
 	SEARCH_PILL_GLASS_FILTER_MARKUP,
+	applyControlGlassChromaticOffset,
 } from "./control-glass-svg";
 
 test("generateControlGlassDisplacementMap(320,80,50) is byte-equal to the baseline recipe in GLASS_SVG_TEXTURE.md", () => {
@@ -108,4 +109,20 @@ test("createControlGlassSvg injects all baseline filter nodes", async () => {
 	expect(svg.querySelector("#mineradio-control-glass-filter")).not.toBeNull();
 	expect(svg.querySelector("#mineradio-search-box-glass-filter")).not.toBeNull();
 	expect(svg.querySelector("#mineradio-search-pill-glass-filter")).not.toBeNull();
+});
+
+test("applyControlGlassChromaticOffset mirrors baseline dx clamp on all control feOffset nodes", async () => {
+	await import("../runtime/happy-dom-preload");
+	document.body.innerHTML = "";
+	const svg = createControlGlassSvg(document.body);
+
+	applyControlGlassChromaticOffset(document, 37.6);
+	const offsets = Array.from(
+		svg.querySelectorAll("#mineradio-control-glass-filter feOffset"),
+	);
+	expect(offsets.map((node) => node.getAttribute("dx"))).toEqual(["-38", "-38", "-38"]);
+	expect(offsets.map((node) => node.getAttribute("dy"))).toEqual(["0", "0", "0"]);
+
+	applyControlGlassChromaticOffset(document, 999);
+	expect(offsets.map((node) => node.getAttribute("dx"))).toEqual(["-140", "-140", "-140"]);
 });

@@ -117,7 +117,7 @@ export const DesktopLyricsPayloadSchema = z.object({
   text: z.string().default(""),
   progress: ClampedNumberSchema(0, 1, 0),
   progressSpan: ClampedNumberSchema(0, 60, 4.8),
-  title: z.string().default("Mineradio"),
+  title: z.string().default("MineRadio-Tauri"),
   artist: z.string().default(""),
   playing: z.boolean().default(false),
   size: ClampedNumberSchema(0.72, 1.55, 1),

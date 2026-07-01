@@ -21,7 +21,7 @@ const SPLASH_DOM = `
   <canvas id="splash-canvas"></canvas>
   <div class="splash-bg-noise"></div>
   <div class="splash-content">
-    <div class="splash-wordmark" id="splash-wordmark" aria-label="Mineradio">
+    <div class="splash-wordmark" id="splash-wordmark" aria-label="MineRadio-Tauri">
       <span class="splash-word-mine">Mine</span>
       <span class="splash-word-radio" aria-label="radio">rad<span class="splash-word-i" aria-hidden="true"></span><span class="splash-word-o">o</span></span>
     </div>
@@ -89,7 +89,7 @@ export function createSplashEngine(root: HTMLElement, opts: SplashEngineOptions 
 		splashEl.classList.add("ready");
 		splashEl.setAttribute("role", "button");
 		splashEl.setAttribute("tabindex", "0");
-		splashEl.setAttribute("aria-label", "点击进入 Mineradio");
+		splashEl.setAttribute("aria-label", "点击进入 MineRadio-Tauri");
 		readyTimer = null;
 		opts.onReadyToEnter?.();
 	}

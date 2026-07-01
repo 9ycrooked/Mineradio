@@ -1,5 +1,8 @@
 # Dependencies
 node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+sidecars/*/node_modules/
 
 # Build output
 dist/
@@ -8,6 +11,12 @@ out/
 release/
 releases/
 win-unpacked/
+target/
+src-tauri/target/
+apps/desktop/src-tauri/target/
+apps/*/dist/
+packages/*/dist/
+sidecars/*/dist/
 *.exe
 *.msi
 *.blockmap
@@ -30,13 +39,8 @@ backups/
 .DS_Store
 Thumbs.db
 desktop.ini
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Historical local experiment files
-public/index.*.html
-!public/index.html
+bun-error.log
+bun-error.log.*
 
 # Screenshots and transient verification artifacts
 .playwright-cli/
@@ -45,11 +49,3 @@ tmp/
 *.png.tmp
 verification/
 screenshots/
-
-# Tauri / Bun workspace outputs
-apps/*/dist/
-apps/*/node_modules/
-packages/*/dist/
-sidecars/*/dist/
-target/
-.worktrees/

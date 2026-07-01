@@ -1,5 +1,5 @@
 import type * as THREE from "three";
-import { normalizeCoverResolution } from "./home-particle-field";
+import { coverTextureSizeForResolution } from "./home-particle-field";
 import {
 	buildEdgeAndDepthCanvas,
 	createCoverDepthTween,
@@ -56,17 +56,13 @@ export interface HomeCoverTextureController {
 const HTTP_URL_RE = /^https?:\/\//i;
 const INLINE_IMAGE_URL_RE = /^data:image\//i;
 const BLOB_URL_RE = /^blob:/i;
+const SAME_ORIGIN_IMAGE_PROXY_RE = /^\/image-proxy(?:[/?#]|$)/i;
 
 function isAllowedCoverUrl(url: string): boolean {
-	return HTTP_URL_RE.test(url) || INLINE_IMAGE_URL_RE.test(url) || BLOB_URL_RE.test(url);
+	return HTTP_URL_RE.test(url) || INLINE_IMAGE_URL_RE.test(url) || BLOB_URL_RE.test(url) || SAME_ORIGIN_IMAGE_PROXY_RE.test(url);
 }
 
-export function coverTextureSizeForResolution(v: number): number {
-	const normalized = normalizeCoverResolution(v);
-	if (normalized >= 1.32) return 512;
-	if (normalized >= 1.10) return 384;
-	return 256;
-}
+export { coverTextureSizeForResolution } from "./home-particle-field";
 
 function defaultCreateCanvas(width: number, height: number): ReturnType<HomeCoverCanvasFactory> | null {
 	if (typeof document === "undefined") return null;
@@ -104,16 +100,67 @@ export function prepareSquareCoverCanvas(
 	return cv;
 }
 
-function defaultLoadImage(url: string): Promise<HomeCoverImage> {
+function loadImageElement(url: string, crossOrigin: boolean): Promise<HomeCoverImage> {
 	if (typeof Image === "undefined") return Promise.reject(new Error("Image unavailable"));
 	return new Promise((resolve, reject) => {
 		const img = new Image();
-		img.crossOrigin = "anonymous";
+		if (crossOrigin) img.crossOrigin = "anonymous";
 		img.decoding = "async";
 		img.onload = () => resolve(img);
 		img.onerror = () => reject(new Error(`failed to load cover image: ${url}`));
 		img.src = url;
 	});
+}
+
+function proxiedCoverFallbackUrl(url: string): string | null {
+	try {
+		const base = typeof location !== "undefined" && location.href ? location.href : "http://127.0.0.1/";
+		const parsed = new URL(url, base);
+		if (!parsed.pathname.endsWith("/image-proxy")) return null;
+		const direct = parsed.searchParams.get("url")?.trim() ?? "";
+		if (!HTTP_URL_RE.test(direct)) return null;
+		return direct;
+	} catch {
+		return null;
+	}
+}
+
+async function defaultLoadImage(url: string): Promise<HomeCoverImage> {
+	try {
+		return await loadImageElement(url, true);
+	} catch (firstError) {
+		const directFallback = proxiedCoverFallbackUrl(url);
+		if (
+			typeof fetch !== "function" ||
+			typeof URL === "undefined" ||
+			typeof URL.createObjectURL !== "function"
+		) {
+			if (directFallback) return await loadImageElement(directFallback, true);
+			throw firstError;
+		}
+		try {
+			const res = await fetch(url, { cache: "force-cache" });
+			if (res.ok) {
+				const contentType = res.headers.get("content-type") ?? "";
+				if (!contentType || /^image\//i.test(contentType)) {
+					const blobUrl = URL.createObjectURL(await res.blob());
+					try {
+						return await loadImageElement(blobUrl, false);
+					} finally {
+						if (typeof setTimeout === "function") {
+							setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
+						} else {
+							URL.revokeObjectURL(blobUrl);
+						}
+					}
+				}
+			}
+		} catch {
+			// 与原项目一致，代理路径失败后继续尝试原始封面 URL。
+		}
+		if (directFallback) return await loadImageElement(directFallback, true);
+		throw firstError;
+	}
 }
 
 function markTextureImage(tex: THREE.Texture, image: HomeCoverImage): void {
@@ -194,35 +241,50 @@ export function createHomeCoverTextureController(
 			.then(async (image) => {
 				if (runToken !== token) return;
 				const preparedImage = prepareSquareCoverCanvas(image, { coverResolution, createCanvas: opts.createCanvas });
-				const heuristicEdgeImage = uniforms.uEdgeTex ? buildDepthImage(preparedImage, opts) : null;
+			if (uniforms.uHasCover.value > 0.5 && uniforms.uCoverTex.value.image) {
+					markTextureImage(uniforms.uPrevCoverTex.value, uniforms.uCoverTex.value.image as HomeCoverImage);
+			}
+			markTextureImage(uniforms.uCoverTex.value, preparedImage);
+			uniforms.uHasCover.value = 1;
+			uniforms.uColorMixT.value = 0;
+			if (uniforms.uLoading) uniforms.uLoading.value = 0;
+			try {
+				opts.onCoverPrepared?.(preparedImage);
+			} catch {
+				// 封面已经进入主纹理；取色/歌词调色失败只能降级，不能阻断粒子封面显示。
+			}
+
+			let heuristicEdgeImage: HomeCoverImage | null = null;
+				try {
+					heuristicEdgeImage = uniforms.uEdgeTex ? buildDepthImage(preparedImage, opts) : null;
+				} catch {
+					heuristicEdgeImage = null;
+				}
+				if (runToken !== token) return;
+				if (heuristicEdgeImage && uniforms.uEdgeTex) {
+					markTextureImage(uniforms.uEdgeTex.value, heuristicEdgeImage);
+					depthTween?.setTarget(1, 0.55, 180);
+				} else {
+					depthTween?.setTarget(0, 0, 1);
+					resetDepthUniforms(uniforms);
+					return;
+				}
+
 				const { image: edgeImage, aiBoostTarget, durationMs } = await maybeBuildAiDepthImage(preparedImage, heuristicEdgeImage, {
 					...opts,
 					aiDepthEnabled,
 				});
-				if (runToken !== token) return;
-				if (uniforms.uHasCover.value > 0.5 && uniforms.uCoverTex.value.image) {
-					markTextureImage(uniforms.uPrevCoverTex.value, uniforms.uCoverTex.value.image as HomeCoverImage);
-				}
-				markTextureImage(uniforms.uCoverTex.value, preparedImage);
-				opts.onCoverPrepared?.(preparedImage);
-				if (edgeImage && uniforms.uEdgeTex) {
-					markTextureImage(uniforms.uEdgeTex.value, edgeImage);
-					depthTween?.setTarget(1, aiBoostTarget, durationMs);
-				} else {
-					depthTween?.setTarget(0, 0, 1);
-					resetDepthUniforms(uniforms);
-				}
-				uniforms.uHasCover.value = 1;
-				uniforms.uColorMixT.value = 0;
-				if (uniforms.uLoading) uniforms.uLoading.value = 0;
+				if (runToken !== token || !edgeImage || !uniforms.uEdgeTex) return;
+				markTextureImage(uniforms.uEdgeTex.value, edgeImage);
+				depthTween?.setTarget(1, aiBoostTarget, durationMs);
 			})
-			.catch(() => {
-				if (runToken !== token) return;
-				uniforms.uHasCover.value = 0;
-				if (uniforms.uLoading) uniforms.uLoading.value = 0;
-				depthTween?.setTarget(0, 0, 1);
-				resetDepthUniforms(uniforms);
-			});
+		.catch(() => {
+			if (runToken !== token) return;
+			uniforms.uHasCover.value = 0;
+			if (uniforms.uLoading) uniforms.uLoading.value = 0;
+			depthTween?.setTarget(0, 0, 1);
+			resetDepthUniforms(uniforms);
+		});
 	}
 
 	function advanceColorMix(dtSeconds: number): void {

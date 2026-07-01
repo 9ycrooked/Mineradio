@@ -292,7 +292,7 @@ function makeFakeScene() {
 	} as { children: unknown[]; add(c: unknown): void; remove(c: unknown): void };
 }
 
-function makeCtx(now: number, dt: number, snap?: Partial<AudioSnapshot>): FrameContext {
+function makeCtx(now: number, dt: number, snap?: Partial<AudioSnapshot>, uniformTime = now): FrameContext {
 	const snapshot: AudioSnapshot = {
 		bass: 0, mid: 0, treble: 0, energy: 0, rb: 0, rm: 0, rt: 0, re: 0,
 		beatPulse: 0, scheduledBeatPulse: 0, beatOnsetFlag: false,
@@ -300,7 +300,7 @@ function makeCtx(now: number, dt: number, snap?: Partial<AudioSnapshot>): FrameC
 	};
 	return {
 		dt, now, snapshot,
-		uniforms: { uTime: { value: now } } as never,
+		uniforms: { uTime: { value: uniformTime } } as never,
 		scene: null as never,
 		camera: null as never,
 		pointerParallax: { x: 0, y: 0 },
@@ -392,6 +392,25 @@ test("mount() creates baseline lyric star river under the stage group", async ()
 	lc.dispose();
 });
 
+test("update uses render-loop uTime seconds for stage lyric motion instead of performance.now milliseconds", async () => {
+	const scene = makeFakeScene();
+	const lc = createStageLyricsLifecycle({
+		scene: scene as never,
+		threeFactory: makeFakeThree(),
+		dotTexture: makeFakeDotTexture(),
+		particleLyricsFlagSupplier: () => true,
+		lyricGlowParticlesSupplier: () => true,
+		lyricGlowStrengthSupplier: () => 0.85,
+		lyricGlowBeatFlagSupplier: () => false,
+		rand: () => 0.35,
+	});
+	const group = await lc.mount(scene as never) as unknown as { children: Array<{ isPoints?: boolean; renderOrder?: number; material?: { uniforms?: Record<string, { value: number }> } }> };
+	lc.update(makeCtx(5000, 0.016, { beatPulse: 0.4 }, 1.25));
+	const river = group.children.find((child) => child.isPoints && child.renderOrder === 45);
+	expect(river?.material?.uniforms?.uTime?.value).toBe(1.25);
+	lc.dispose();
+});
+
 test("tickLyricsParticles advances currentIdx to 1 when currentTime reaches line B", async () => {
 	const { lifecycle, scene } = await buildLifecycleWithCurrent({
 		lyrics: [{ t: 0, text: "A" }, { t: 2, text: "B" }],
@@ -401,6 +420,28 @@ test("tickLyricsParticles advances currentIdx to 1 when currentTime reaches line
 	expect(lifecycle.getCurrentText()).toBe("B");
 	lifecycle.dispose();
 	expect((scene.children as unknown[]).length).toBe(0);
+});
+
+test("setLyricLines sorts interleaved input before stage line selection", async () => {
+	const { lifecycle } = await buildLifecycleWithCurrent({
+		lyrics: [{ t: 2, text: "C" }, { t: 0, text: "A" }, { t: 1, text: "B" }],
+		currentTime: 1.2,
+	});
+	expect(lifecycle.getCurrentIdx()).toBe(1);
+	expect(lifecycle.getCurrentText()).toBe("B");
+	lifecycle.dispose();
+});
+
+test("setLyricLines keeps current stage line when the lyric payload content is unchanged", async () => {
+	const { lifecycle } = await buildLifecycleWithCurrent({
+		lyrics: [{ t: 0, text: "A" }, { t: 2, text: "B" }],
+		currentTime: 2.2,
+	});
+	expect(lifecycle.getCurrentIdx()).toBe(1);
+	lifecycle.setLyricLines([{ t: 0, text: "A" }, { t: 2, text: "B" }]);
+	expect(lifecycle.getCurrentIdx()).toBe(1);
+	expect(lifecycle.getCurrentText()).toBe("B");
+	lifecycle.dispose();
 });
 
 test("tickLyricsParticles passes live lyric text options into the built lyric group and rebuilds when they change", async () => {

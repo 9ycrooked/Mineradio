@@ -257,7 +257,7 @@ test("EmptyHomeHost marks real Home card covers with the baseline has-cover clas
 	expect(/class="home-card-art has-cover" id="home-weather-art" style="background-image:url\(&quot;https:\/\/img\.example\/p\.jpg&quot;\)"/.test(html)).toBe(true);
 });
 
-test("Home CSS keeps baseline cover pseudo-elements without the migration-only bottom mask", async () => {
+test("Home CSS keeps cover pseudo-elements without the extra bottom mask", async () => {
 	const css = await fetch(new URL("../styles.css", import.meta.url)).then((response) => response.text());
 
 	expect(css).toContain(".home-card-art::after");

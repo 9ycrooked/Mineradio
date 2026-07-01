@@ -6,7 +6,7 @@ import "./DesktopLyricsOverlay.css";
 
 const DEFAULT_PAYLOAD: Partial<DesktopLyricsPayload> = {
 	enabled: true,
-	text: "Mineradio",
+	text: "MineRadio-Tauri",
 	progress: 0,
 	clickThrough: true
 };

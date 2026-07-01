@@ -1,4 +1,4 @@
-//! Tauri command handlers for the Mineradio runtime shell.
+//! Tauri command handlers for the MineRadio-Tauri runtime shell.
 //!
 //! `export_json_file` and `import_json_file` use Rust-owned JSON file dialogs:
 //! the frontend sends data or receives parsed JSON, while paths come only from
@@ -196,9 +196,13 @@ pub async fn check_for_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<updater::UpdaterStatus, String> {
-    let current_version = state.config.app_version.clone();
-    let has_public_key = state.config.updater_public_key_configured;
-    drop(state);
+    let (current_version, has_public_key) = {
+        let config = &state.config;
+        (
+            config.app_version.clone(),
+            config.updater_public_key_configured,
+        )
+    };
 
     match app.updater() {
         Ok(updater_client) => match updater_client.check().await {
@@ -228,9 +232,13 @@ pub async fn install_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<updater::UpdaterStatus, String> {
-    let current_version = state.config.app_version.clone();
-    let has_public_key = state.config.updater_public_key_configured;
-    drop(state);
+    let (current_version, has_public_key) = {
+        let config = &state.config;
+        (
+            config.app_version.clone(),
+            config.updater_public_key_configured,
+        )
+    };
 
     if !has_public_key {
         return Ok(updater::check_error_status(
@@ -659,7 +667,7 @@ fn post_login_session_cookie_request(
         request.path,
         request.host,
         request.port,
-        request.body.as_bytes().len(),
+        request.body.len(),
         request.body
     );
     stream
@@ -1135,7 +1143,7 @@ fn ensure_desktop_lyrics_window(app: &tauri::AppHandle) -> Result<WebviewWindow,
         labels::DESKTOP_LYRICS,
         WebviewUrl::App(desktop_lyrics_window_url().into()),
     )
-    .title("Mineradio Desktop Lyrics")
+    .title("MineRadio-Tauri Desktop Lyrics")
     .decorations(false)
     .always_on_top(true)
     .resizable(false)
@@ -2135,7 +2143,10 @@ mod tests {
             LoginPopupAction::NavigateInLoginWindow
         );
         assert_eq!(
-            login_popup_action(LoginProvider::Netease, "https://interface.music.163.com/login"),
+            login_popup_action(
+                LoginProvider::Netease,
+                "https://interface.music.163.com/login"
+            ),
             LoginPopupAction::NavigateInLoginWindow
         );
         assert_eq!(
@@ -2240,16 +2251,13 @@ mod tests {
 
     #[test]
     fn desktop_lyrics_lock_intent_maps_to_ignore_cursor_events() {
-        assert_eq!(desktop_lyrics_lock_intent(true).ignore_cursor_events, true);
-        assert_eq!(
-            desktop_lyrics_lock_intent(false).ignore_cursor_events,
-            false
-        );
+        assert!(desktop_lyrics_lock_intent(true).ignore_cursor_events);
+        assert!(!desktop_lyrics_lock_intent(false).ignore_cursor_events);
     }
 
     #[test]
     fn desktop_lyrics_default_lock_starts_click_through() {
-        assert_eq!(desktop_lyrics_default_click_through(), true);
+        assert!(desktop_lyrics_default_click_through());
     }
 
     #[test]

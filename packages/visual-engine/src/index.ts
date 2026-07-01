@@ -35,6 +35,8 @@ export {
 	generateControlGlassDisplacementMap,
 	createControlGlassSvg,
 	supportsControlGlassSvgFilter,
+	applyControlGlassChromaticOffset,
+	normalizeControlGlassChromaticOffset,
 	CONTROL_GLASS_FILTER_MARKUP,
 	CONTROL_GLASS_FILTER_DEFS_MARKUP,
 	SEARCH_BOX_GLASS_FILTER_MARKUP,

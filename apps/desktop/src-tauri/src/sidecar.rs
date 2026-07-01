@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const SIDECAR_LOG_FILE_NAME: &str = "sidecar-runtime.log";
 pub const SIDECAR_BINARY_ENV: &str = "MINERADIO_SIDECAR_BIN";
+pub const BUN_BINARY_ENV: &str = "MINERADIO_BUN_BIN";
 pub const SIDECAR_BINARY_BASENAME: &str = "mineradio-sidecar-api";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -110,6 +111,53 @@ pub fn now_ms() -> u64 {
 
 pub fn sidecar_log_path(log_dir: &Path) -> PathBuf {
     log_dir.join(SIDECAR_LOG_FILE_NAME)
+}
+
+fn bun_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "bun.exe"
+    } else {
+        "bun"
+    }
+}
+
+fn non_empty_env_path(key: &str) -> Option<PathBuf> {
+    std::env::var_os(key).and_then(|value| {
+        if value.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(value))
+        }
+    })
+}
+
+fn dev_bun_candidates() -> Vec<PathBuf> {
+    let exe = bun_executable_name();
+    let mut candidates = Vec::new();
+    if let Some(path) = non_empty_env_path(BUN_BINARY_ENV) {
+        candidates.push(path);
+    }
+    if let Some(dir) = non_empty_env_path("BUN_INSTALL") {
+        candidates.push(dir.join("bin").join(exe));
+    }
+    if let Some(dir) = non_empty_env_path("USERPROFILE") {
+        candidates.push(dir.join(".bun").join("bin").join(exe));
+    }
+    if let Some(dir) = non_empty_env_path("HOME") {
+        candidates.push(dir.join(".bun").join("bin").join(exe));
+    }
+    candidates
+}
+
+pub fn resolve_dev_bun_program_from_candidates<I>(candidates: I) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+pub fn resolve_dev_bun_program() -> Option<PathBuf> {
+    resolve_dev_bun_program_from_candidates(dev_bun_candidates())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,7 +349,9 @@ pub fn build_sidecar_command_from_plan(
 ) -> std::process::Command {
     let mut cmd = match plan {
         SidecarLaunchPlan::Dev => {
-            let mut cmd = std::process::Command::new("bun");
+            let mut cmd = resolve_dev_bun_program()
+                .map(std::process::Command::new)
+                .unwrap_or_else(|| std::process::Command::new("bun"));
             cmd.args(["run", "sidecars/api/src/server.ts"]);
             cmd.current_dir(workspace_root_from_manifest_dir());
             cmd
@@ -598,7 +648,12 @@ mod tests {
             "1.2.3",
         );
         let program = cmd.get_program();
-        assert_eq!(program, std::ffi::OsStr::new("bun"));
+        let program_text = program.to_string_lossy().replace('\\', "/");
+        assert!(
+            program == std::ffi::OsStr::new("bun")
+                || program_text.ends_with("/.bun/bin/bun.exe")
+                || program_text.ends_with("/.bun/bin/bun")
+        );
 
         let args: Vec<String> = cmd
             .get_args()
@@ -633,6 +688,20 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn resolve_dev_bun_program_uses_first_existing_candidate() {
+        let dir = std::env::temp_dir().join(format!("mineradio-bun-candidate-{}", now_ms()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let missing = dir.join("missing").join(bun_executable_name());
+        let existing = dir.join(bun_executable_name());
+        std::fs::write(&existing, b"").expect("bun marker");
+
+        let resolved = resolve_dev_bun_program_from_candidates(vec![missing, existing.clone()]);
+
+        assert_eq!(resolved, Some(existing));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -682,9 +751,9 @@ mod tests {
     fn find_packaged_sidecar_binary_for_exe_finds_tauri_external_bin_sibling() {
         let root = std::env::temp_dir().join(format!("mineradio-sidecar-test-{}", now_ms()));
         let exe_path = root.join(if cfg!(target_os = "windows") {
-            "Mineradio Tauri Rewrite.exe"
+            "MineRadio-Tauri.exe"
         } else {
-            "Mineradio Tauri Rewrite"
+            "MineRadio-Tauri"
         });
         std::fs::create_dir_all(&root).expect("create temp dir");
         std::fs::write(&exe_path, b"app").expect("write fake exe");
@@ -766,7 +835,9 @@ mod tests {
         assert!(terminate_sidecar_child(orphan));
         assert_eq!(runtime.snapshot().pid, Some(second_id));
 
-        assert!(terminate_sidecar_child(sidecar_runtime_mark_stopped(&mut runtime)));
+        assert!(terminate_sidecar_child(sidecar_runtime_mark_stopped(
+            &mut runtime
+        )));
     }
 
     #[test]
@@ -975,19 +1046,17 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let body = br#"{"ok":true,"appVersion":"x","apiVersion":"0.1.0","schemaVersion":"0.1.0","providers":[]}"#.to_vec();
         std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(mut stream) = stream {
-                    let mut req = [0u8; 4096];
-                    let _ = std::io::Read::read(&mut stream, &mut req);
-                    let resp = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    let _ = stream.write_all(resp.as_bytes());
-                    let _ = stream.write_all(&body);
-                    let _ = stream.flush();
-                    let _ = stream.shutdown(std::net::Shutdown::Both);
-                }
+            for mut stream in listener.incoming().flatten() {
+                let mut req = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut req);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Both);
             }
         });
         let base_url = format!("http://127.0.0.1:{}", port);

@@ -156,10 +156,9 @@ fn start_sidecar_supervisor(
             break;
         }
         let should_restart = match state.sidecar.lock() {
-            Ok(mut runtime) => match sidecar::sidecar_runtime_child_exited(&mut runtime) {
-                Ok(exited) => exited,
-                Err(_) => false,
-            },
+            Ok(mut runtime) => {
+                sidecar::sidecar_runtime_child_exited(&mut runtime).unwrap_or_default()
+            }
             Err(_) => false,
         };
         if !should_restart {
@@ -371,7 +370,7 @@ pub fn run() {
             commands::desktop_lyrics_terminate_poller_child(lyrics_child);
         })
         .run(context)
-        .expect("failed to run Mineradio Tauri shell");
+        .expect("failed to run MineRadio-Tauri shell");
 }
 
 #[cfg(test)]

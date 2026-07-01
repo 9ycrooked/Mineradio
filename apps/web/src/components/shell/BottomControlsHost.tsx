@@ -117,7 +117,10 @@ export function BottomControlsHost(props: BottomControlsHostProps): ReactElement
 		const enterControls = () => {
 			if (suppressed()) return;
 			hoveringRef.current = true;
+			bar.classList.add("visible");
+			bar.classList.remove("soft-hidden");
 			wakeBottomHandle();
+			propsRef.current.onReveal();
 			clearHideTimer();
 		};
 		const leaveControls = () => {

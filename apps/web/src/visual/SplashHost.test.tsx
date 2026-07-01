@@ -348,7 +348,7 @@ test("createSplashEngine builds splash DOM inside root and fires ready callback 
 	flushTimers();
 	expect(readyCalled).toBe(1);
 	expect(splash.classList.contains("ready")).toBe(true);
-	expect(splash.attrs.get("aria-label")).toBe("点击进入 Mineradio");
+	expect(splash.attrs.get("aria-label")).toBe("点击进入 MineRadio-Tauri");
 
 	engine.dispose();
 	expect(fakeRoot.children.length).toBe(0);

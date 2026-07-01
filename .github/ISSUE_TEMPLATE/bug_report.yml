@@ -1,0 +1,96 @@
+name: Bug 反馈
+description: 报告 MineRadio-Tauri 中可复现的问题
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量提供可复现信息，并在提交前移除 Cookie、Token、账号信息、私密链接和本地隐私路径。
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题概述
+      description: 简要说明发生了什么。
+      placeholder: 例如：搜索结果点击播放后，播放器状态停留在加载中。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按顺序列出如何触发这个问题。
+      placeholder: |
+        1. 打开应用
+        2. 搜索一首歌
+        3. 点击播放
+        4. 观察到...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你认为应用应该如何表现？
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么？如果有报错，请贴脱敏后的摘要。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - 播放
+        - 搜索 / Provider
+        - 歌词
+        - 视觉 / 3D 歌单架
+        - 桌面窗口 / 系统集成
+        - 更新 / 安装包
+        - 文档
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本或提交
+      placeholder: 例如：0.1.0 或 commit hash
+    validations:
+      required: false
+
+  - type: input
+    id: system
+    attributes:
+      label: 系统环境
+      placeholder: 例如：Windows 11 23H2, WebView2 版本...
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图、录屏或日志
+      description: 可粘贴脱敏后的日志摘要，或拖入截图/录屏。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已确认没有提交 Cookie、Token、账号信息、私密链接或本地隐私路径。
+          required: true

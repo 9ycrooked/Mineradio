@@ -1,9 +1,10 @@
 {
-  "name": "mineradio",
-  "productName": "Mineradio Tauri Rewrite",
+  "name": "mineradio-tauri",
+  "productName": "MineRadio-Tauri",
   "version": "0.1.0",
-  "description": "Mineradio Tauri rewrite workspace for Tauri, Rust, Bun, React, Zustand and visual-engine.",
-  "author": "Mineradio Tauri Rewrite contributors",
+  "description": "MineRadio-Tauri desktop music player.",
+  "author": "MineRadio-Tauri contributors",
+  "license": "GPL-3.0-only",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -18,20 +19,7 @@
     "tauri:build": "bun run --filter ./apps/desktop tauri build",
     "web:build": "bun run --filter ./apps/web build",
     "sidecar:dev": "bun run --filter ./sidecars/api dev",
-    "tauri-stack-policy:check": "node scripts/check-tauri-stack-policy.mjs",
-    "app-data-policy:check": "node scripts/check-app-data-policy.mjs",
-    "installer-policy:check": "node scripts/check-installer-policy.mjs",
-    "ai-depth-remote-policy:check": "node scripts/check-ai-depth-remote-policy.mjs",
-    "license:check": "node scripts/check-license-allowlist.mjs",
-    "license-transitive:check": "node scripts/check-transitive-licenses.mjs",
-    "packaged-notices:check": "node scripts/check-packaged-notices.mjs",
-    "release-csp:check": "node scripts/check-release-csp.mjs",
-    "release-identity:check": "node scripts/check-release-identity.mjs",
-    "release-manifest:generate": "node scripts/generate-updater-manifest.mjs",
-    "release-notes-policy:check": "node scripts/check-release-notes-policy.mjs",
-    "frontend-debug-log-policy:check": "node scripts/check-frontend-debug-logs.mjs",
-    "main-flow-policy:check": "node scripts/check-main-flow-policy.mjs",
-    "sidecar-runtime-policy:check": "node scripts/check-sidecar-runtime-policy.mjs",
-    "updater-policy:check": "node scripts/check-updater-policy.mjs"
+    "typecheck": "bun run --filter ./packages/shared typecheck && bun run --filter ./packages/visual-engine typecheck && bun run --filter ./sidecars/api typecheck && bun run --filter ./apps/web typecheck",
+    "test": "bun test packages/shared packages/visual-engine sidecars/api apps/web"
   }
 }

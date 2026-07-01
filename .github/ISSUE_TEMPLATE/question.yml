@@ -1,0 +1,54 @@
+name: 问题咨询
+description: 咨询使用、开发、构建或项目方向相关问题
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+      description: 请尽量具体描述你想确认什么。
+      placeholder: 例如：本地启动开发环境时，sidecar 应该如何配置？
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景信息
+      description: 你为什么会遇到这个问题？当前尝试到了哪一步？
+    validations:
+      required: false
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: 问题类型
+      options:
+        - 使用问题
+        - 本地开发
+        - 构建 / 安装
+        - Tauri / Rust
+        - Bun / TypeScript / React
+        - Provider / 第三方平台
+        - 视觉 / 交互
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已尝试的方式
+      description: 可写你已经执行过的命令、看过的错误信息或尝试过的解决方案。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已确认没有提交 Cookie、Token、账号信息、私密链接或本地隐私路径。
+          required: true

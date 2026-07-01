@@ -18,11 +18,13 @@
     "typescript": "^5.9.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "three": "^0.180.0",
     "zustand": "^5.0.9",
     "@tauri-apps/api": "^2"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.180.0"
   }
 }

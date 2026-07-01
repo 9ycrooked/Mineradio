@@ -322,6 +322,7 @@ export interface VisualControlPanelHostProps {
   onNumberSettingChange?: (key: keyof FxState, value: number) => void;
   onBooleanSettingChange?: (key: keyof FxState, value: boolean) => void;
   onStringSettingChange?: (key: keyof FxState, value: string) => void;
+  onFxPatchChange?: (patch: Partial<FxState>) => void;
   onNotice?: (message: string) => void;
 }
 
@@ -540,6 +541,12 @@ export function VisualControlPanelHost(
     },
     [props],
   );
+  const setHomeAccentColor = useCallback(
+    (color: string) => {
+      props.onStringSettingChange?.("homeAccentColor", color.toLowerCase());
+    },
+    [props],
+  );
   const toggleAutoHide = useCallback(() => {
     const next = !autoHide;
     saveFxFabAutoHidePreference(next);
@@ -551,10 +558,18 @@ export function VisualControlPanelHost(
   const resetUiAccentColor = useCallback(() => {
     props.onStringSettingChange?.("uiAccentColor", FX_DEFAULTS.uiAccentColor);
   }, [props]);
+  const resetHomeAccentColor = useCallback(() => {
+    props.onStringSettingChange?.("homeAccentColor", FX_DEFAULTS.homeAccentColor);
+  }, [props]);
   const setVisualTintCustom = useCallback(
     (color: string) => {
+      const visualTintColor = color.toLowerCase();
+      if (props.onFxPatchChange) {
+        props.onFxPatchChange({ visualTintMode: "custom", visualTintColor });
+        return;
+      }
       props.onStringSettingChange?.("visualTintMode", "custom");
-      props.onStringSettingChange?.("visualTintColor", color.toLowerCase());
+      props.onStringSettingChange?.("visualTintColor", visualTintColor);
     },
     [props],
   );
@@ -562,13 +577,25 @@ export function VisualControlPanelHost(
     props.onStringSettingChange?.("visualTintMode", "auto");
   }, [props]);
   const resetVisualTintColor = useCallback(() => {
+    if (props.onFxPatchChange) {
+      props.onFxPatchChange({
+        visualTintMode: "auto",
+        visualTintColor: FX_DEFAULTS.visualTintColor,
+      });
+      return;
+    }
     props.onStringSettingChange?.("visualTintMode", "auto");
     props.onStringSettingChange?.("visualTintColor", FX_DEFAULTS.visualTintColor);
   }, [props]);
   const setLyricColorCustom = useCallback(
     (color: string) => {
+      const lyricColor = color.toLowerCase();
+      if (props.onFxPatchChange) {
+        props.onFxPatchChange({ lyricColorMode: "custom", lyricColor });
+        return;
+      }
       props.onStringSettingChange?.("lyricColorMode", "custom");
-      props.onStringSettingChange?.("lyricColor", color.toLowerCase());
+      props.onStringSettingChange?.("lyricColor", lyricColor);
     },
     [props],
   );
@@ -577,8 +604,16 @@ export function VisualControlPanelHost(
   }, [props]);
   const setLyricHighlightCustom = useCallback(
     (color: string) => {
+      const lyricHighlightColor = color.toLowerCase();
+      if (props.onFxPatchChange) {
+        props.onFxPatchChange({
+          lyricHighlightMode: "custom",
+          lyricHighlightColor,
+        });
+        return;
+      }
       props.onStringSettingChange?.("lyricHighlightMode", "custom");
-      props.onStringSettingChange?.("lyricHighlightColor", color.toLowerCase());
+      props.onStringSettingChange?.("lyricHighlightColor", lyricHighlightColor);
     },
     [props],
   );
@@ -595,6 +630,7 @@ export function VisualControlPanelHost(
     [props],
   );
   const uiAccentColor = hexSettingValue(props, "uiAccentColor");
+  const homeAccentColor = hexSettingValue(props, "homeAccentColor");
   const visualTintColor = hexSettingValue(props, "visualTintColor");
   const visualTintAuto = stringValue(props, "visualTintMode") !== "custom";
   const lyricColor = hexSettingValue(props, "lyricColor");
@@ -719,6 +755,25 @@ export function VisualControlPanelHost(
             封面
           </button>
           <button id="visual-tint-default-btn" className="fx-mini-btn ghost" type="button" onClick={resetVisualTintColor}>
+            默认
+          </button>
+        </div>
+        <div className="lyric-color-row">
+          <input
+            id="home-accent-picker"
+            className="lyric-color-picker"
+            type="color"
+            value={homeAccentColor}
+            onInput={(event) => setHomeAccentColor(event.currentTarget.value)}
+            title="Home 填充色"
+          />
+          <div className="fx-color-row-label">
+            Home 填充
+            <small id="home-accent-value">
+              {homeAccentColor.toUpperCase()}
+            </small>
+          </div>
+          <button id="home-accent-default-btn" className="fx-mini-btn ghost" type="button" onClick={resetHomeAccentColor}>
             默认
           </button>
         </div>

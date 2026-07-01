@@ -1,8 +1,7 @@
 // Ported verbatim from baseline `public/index.html` `playMineradioIntroSound` (L25964-26041)
 // and `armSplashSoundFallback` (L26042-26052). Constants are byte-equal baseline values; do not
 // "creatively" rewrite — this is a fragile Web Audio graph (gain ramps, filter freq ramps,
-// noise buffer decay) and the visual engine AGENTS.md locks baseline-derived audio as
-// byte-equal.
+// noise buffer decay), so keep the baseline-derived audio constants byte-equal.
 
 export interface IntroSoundPlayer {
 	/** Plays the intro sound once. Subsequent calls are no-ops after the first successful play. */

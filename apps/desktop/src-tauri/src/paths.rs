@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-pub const TAURI_REWRITE_APP_DATA_DIR_NAME: &str = "Mineradio Tauri Rewrite";
+pub const APP_DATA_DIR_NAME: &str = "MineRadio-Tauri";
 
 pub fn with_override(dir: Option<String>, fallback: PathBuf) -> PathBuf {
     match dir {
@@ -10,7 +10,7 @@ pub fn with_override(dir: Option<String>, fallback: PathBuf) -> PathBuf {
 }
 
 pub fn default_app_data_dir_from_base(base: PathBuf) -> PathBuf {
-    base.join(TAURI_REWRITE_APP_DATA_DIR_NAME)
+    base.join(APP_DATA_DIR_NAME)
 }
 
 pub fn default_log_dir_from_base(base: PathBuf) -> PathBuf {
@@ -65,23 +65,23 @@ mod tests {
     fn resolve_dirs_returns_nonempty_paths() {
         let app_data = resolve_app_data_dir();
         let logs = resolve_log_dir();
-        assert!(app_data.to_string_lossy().len() > 0);
-        assert!(logs.to_string_lossy().len() > 0);
+        assert!(!app_data.to_string_lossy().is_empty());
+        assert!(!logs.to_string_lossy().is_empty());
     }
 
     #[test]
-    fn default_dirs_use_tauri_rewrite_identity_not_legacy_mineradio_dir() {
+    fn default_dirs_use_project_identity() {
         let base = PathBuf::from("/user-data");
         let app_data = default_app_data_dir_from_base(base.clone());
         let logs = default_log_dir_from_base(base);
         assert_eq!(
             app_data,
-            PathBuf::from("/user-data").join("Mineradio Tauri Rewrite")
+            PathBuf::from("/user-data").join("MineRadio-Tauri")
         );
         assert_eq!(
             logs,
             PathBuf::from("/user-data")
-                .join("Mineradio Tauri Rewrite")
+                .join("MineRadio-Tauri")
                 .join("logs")
         );
     }
