@@ -4,6 +4,7 @@
 use rusqlite::{Connection, OptionalExtension};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// 解析数据库路径
 fn resolve_db_path(app_data_dir: &Path) -> PathBuf {
@@ -11,7 +12,9 @@ fn resolve_db_path(app_data_dir: &Path) -> PathBuf {
 }
 
 fn open_connection(db_path: &Path) -> rusqlite::Result<Connection> {
-    Connection::open(db_path)
+    let conn = Connection::open(db_path)?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    Ok(conn)
 }
 
 fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
@@ -57,11 +60,15 @@ fn apply_migration(
         }
     };
     let tx = conn.unchecked_transaction()?;
-    tx.execute_batch(sql)?;
-    tx.execute(
+    let claimed = tx.execute(
         "INSERT OR IGNORE INTO _migrations (version, name) VALUES (?1, ?2)",
         rusqlite::params![version, name],
     )?;
+    if claimed == 0 {
+        tx.commit()?;
+        return Ok(());
+    }
+    tx.execute_batch(sql)?;
     tx.commit()?;
     Ok(())
 }
@@ -97,6 +104,8 @@ fn get_kv(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
     .optional()
 }
 
+/// 写入 kv_store;当前生产路径暂无通用 KV command,保留给后续设置迁移复用。
+#[allow(dead_code)]
 fn set_kv(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     tx.execute(
@@ -158,10 +167,15 @@ fn get_startup_count(conn: &Connection) -> rusqlite::Result<i64> {
 }
 
 fn increment_startup_count(conn: &Connection) -> rusqlite::Result<i64> {
-    let current_count = get_startup_count(conn)?;
-    let new_count = current_count + 1;
-    set_kv(conn, "startup_count", &new_count.to_string())?;
-    Ok(new_count)
+    conn.query_row(
+        "INSERT INTO kv_store (key, value) VALUES ('startup_count', '1')
+         ON CONFLICT(key) DO UPDATE SET
+             value = CAST(CAST(kv_store.value AS INTEGER) + 1 AS TEXT),
+             updated_at = datetime('now')
+         RETURNING CAST(value AS INTEGER)",
+        [],
+        |row| row.get(0),
+    )
 }
 
 /// 数据库运行时状态:把连接和它在磁盘上的路径打包在一起。
@@ -258,6 +272,31 @@ mod tests {
     }
 
     #[test]
+    fn apply_migration_skips_when_version_is_already_recorded() {
+        let conn = fresh_db();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS _migrations (
+                version INTEGER PRIMARY KEY,
+                name    TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO _migrations (version, name) VALUES (2, 'create_listen_history');",
+        )
+        .unwrap();
+
+        apply_migration(&conn, 2, "create_listen_history", true).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'listen_history'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 0);
+    }
+
+    #[test]
     fn test_get_kv_missing_key_returns_none() {
         let conn = fresh_db();
         run_migrations(&conn).unwrap();
@@ -338,6 +377,52 @@ mod tests {
         // 再调一次: 1 → 2 (这才是"递增"的关键)
         let after_second = increment_startup_count(&conn).unwrap();
         assert_eq!(after_second, 2);
+    }
+
+    #[test]
+    fn increment_startup_count_handles_parallel_connections() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!(
+            "mineradio-test-count-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+
+        let setup_conn = open_connection(&db_path).unwrap();
+        run_migrations(&setup_conn).unwrap();
+        drop(setup_conn);
+
+        let workers = 8;
+        let iterations = 8;
+        let barrier = Arc::new(Barrier::new(workers));
+        let mut handles = Vec::new();
+        for _ in 0..workers {
+            let path = db_path.clone();
+            let start = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                let conn = open_connection(&path).unwrap();
+                start.wait();
+                for _ in 0..iterations {
+                    increment_startup_count(&conn).unwrap();
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let conn = open_connection(&db_path).unwrap();
+        let count = get_startup_count(&conn).unwrap();
+        let _ = std::fs::remove_file(&db_path);
+        assert_eq!(count, (workers * iterations) as i64);
     }
 
     #[test]
