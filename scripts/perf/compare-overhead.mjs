@@ -66,8 +66,14 @@ function ensureDir(dir) {
 function ensureWorktrees() {
 	ensureDir(worktreeRoot);
 	for (const version of versions) {
-		if (existsSync(path.join(version.path, ".git"))) continue;
-		run("git", ["worktree", "add", "--detach", version.path, version.ref], repoRoot);
+		const targetRef = version.ref === "HEAD"
+			? run("git", ["rev-parse", "HEAD"], repoRoot, { capture: true }).stdout.trim()
+			: version.ref;
+		if (existsSync(path.join(version.path, ".git"))) {
+			run("git", ["checkout", "--detach", targetRef], version.path);
+			continue;
+		}
+		run("git", ["worktree", "add", "--detach", version.path, targetRef], repoRoot);
 	}
 }
 
@@ -145,7 +151,9 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { PlaylistDetail, PlaylistSummary, Track } from "@mineradio/shared";
 import { PlaylistPanelHost } from "./src/components/shell/PlaylistPanelHost";
+import { SearchShell } from "./src/components/shell/SearchShell";
 import { PlayerConsoleHost } from "./src/visual/PlayerConsoleHost";
+import { useSearchStore } from "./src/stores/search-store";
 import { buildEdgeAndDepthCanvas } from "../../packages/visual-engine/src/home-visual/cover-depth";
 
 await import("../../packages/visual-engine/src/runtime/happy-dom-preload");
@@ -294,6 +302,34 @@ async function measureMiniQueue(): Promise<Record<string, number>> {
 	return { rowCount, nodeCount, virtualized };
 }
 
+async function measureSearchResults(): Promise<Record<string, number>> {
+	const results = Array.from({ length: 180 }, (_, index) => makeTrack(String(index)));
+	useSearchStore.setState({
+		results,
+		loading: false,
+		error: null,
+		provider: "netease",
+		keyword: "Song",
+	});
+	const { container, unmount } = await mount(
+		React.createElement(SearchShell, {
+			client: null,
+		}),
+	);
+	const rowCount = container.querySelectorAll(".search-shell-row").length;
+	const nodeCount = container.querySelectorAll("*").length;
+	const virtualized = container.querySelector(".search-shell-list")?.getAttribute("data-virtualized") === "true" ? 1 : 0;
+	unmount();
+	useSearchStore.setState({
+		results: [],
+		loading: false,
+		error: null,
+		provider: "netease",
+		keyword: "",
+	});
+	return { rowCount, nodeCount, virtualized };
+}
+
 function makeSourceCanvas(width: number, height: number, data: Uint8ClampedArray) {
 	return {
 		width,
@@ -378,6 +414,7 @@ const results = {
 	queuePanel: await measureScenario("queuePanel", measureQueuePanel),
 	playlistDetail: await measureScenario("playlistDetail", measurePlaylistDetail),
 	miniQueue: await measureScenario("miniQueue", measureMiniQueue),
+	searchResults: await measureScenario("searchResults", measureSearchResults),
 	coverDepthBuild: await measureScenario("coverDepthBuild", measureCoverDepthBuild),
 };
 
@@ -759,6 +796,7 @@ function buildReport(results) {
 		["队列面板 240 首", baselineRender.queuePanel.rowCount, optimizedRender.queuePanel.rowCount, formatDrop(baselineRender.queuePanel.rowCount, optimizedRender.queuePanel.rowCount), baselineRender.queuePanel.nodeCount, optimizedRender.queuePanel.nodeCount, formatDrop(baselineRender.queuePanel.nodeCount, optimizedRender.queuePanel.nodeCount), formatChange(baselineRender.queuePanel.cpuMs, optimizedRender.queuePanel.cpuMs), formatChange(baselineRender.queuePanel.wallMs, optimizedRender.queuePanel.wallMs)],
 		["歌单详情 600 首", baselineRender.playlistDetail.rowCount, optimizedRender.playlistDetail.rowCount, formatDrop(baselineRender.playlistDetail.rowCount, optimizedRender.playlistDetail.rowCount), baselineRender.playlistDetail.nodeCount, optimizedRender.playlistDetail.nodeCount, formatDrop(baselineRender.playlistDetail.nodeCount, optimizedRender.playlistDetail.nodeCount), formatChange(baselineRender.playlistDetail.cpuMs, optimizedRender.playlistDetail.cpuMs), formatChange(baselineRender.playlistDetail.wallMs, optimizedRender.playlistDetail.wallMs)],
 		["迷你队列 240 首", baselineRender.miniQueue.rowCount, optimizedRender.miniQueue.rowCount, formatDrop(baselineRender.miniQueue.rowCount, optimizedRender.miniQueue.rowCount), baselineRender.miniQueue.nodeCount, optimizedRender.miniQueue.nodeCount, formatDrop(baselineRender.miniQueue.nodeCount, optimizedRender.miniQueue.nodeCount), formatChange(baselineRender.miniQueue.cpuMs, optimizedRender.miniQueue.cpuMs), formatChange(baselineRender.miniQueue.wallMs, optimizedRender.miniQueue.wallMs)],
+		["搜索结果 180 首", baselineRender.searchResults.rowCount, optimizedRender.searchResults.rowCount, formatDrop(baselineRender.searchResults.rowCount, optimizedRender.searchResults.rowCount), baselineRender.searchResults.nodeCount, optimizedRender.searchResults.nodeCount, formatDrop(baselineRender.searchResults.nodeCount, optimizedRender.searchResults.nodeCount), formatChange(baselineRender.searchResults.cpuMs, optimizedRender.searchResults.cpuMs), formatChange(baselineRender.searchResults.wallMs, optimizedRender.searchResults.wallMs)],
 	]));
 	rows.push("");
 	rows.push("## Depth / 轮询 / 构建产物");
@@ -775,13 +813,13 @@ function buildReport(results) {
 	rows.push("");
 	rows.push("## 结论");
 	rows.push("");
-	rows.push(`- 当前优化版在大列表渲染上收益最明显: 队列 rows 下降 ${formatDrop(baselineRender.queuePanel.rowCount, optimizedRender.queuePanel.rowCount)}，歌单详情 rows 下降 ${formatDrop(baselineRender.playlistDetail.rowCount, optimizedRender.playlistDetail.rowCount)}，迷你队列 rows 下降 ${formatDrop(baselineRender.miniQueue.rowCount, optimizedRender.miniQueue.rowCount)}。`);
+	rows.push(`- 当前优化版在大列表渲染上收益最明显: 队列 rows 下降 ${formatDrop(baselineRender.queuePanel.rowCount, optimizedRender.queuePanel.rowCount)}，歌单详情 rows 下降 ${formatDrop(baselineRender.playlistDetail.rowCount, optimizedRender.playlistDetail.rowCount)}，迷你队列 rows 下降 ${formatDrop(baselineRender.miniQueue.rowCount, optimizedRender.miniQueue.rowCount)}，搜索结果 rows 下降 ${formatDrop(baselineRender.searchResults.rowCount, optimizedRender.searchResults.rowCount)}。`);
 	rows.push(`- Depth 构建单次大 scratch 分配从 ${baselineRender.coverDepthBuild.largeFloat32Allocations} 次降到 ${optimizedRender.coverDepthBuild.largeFloat32Allocations} 次，单次大数组分配下降 ${formatDrop(baselineRender.coverDepthBuild.largeFloat32Bytes, optimizedRender.coverDepthBuild.largeFloat32Bytes)}。`);
 	rows.push(`- 隐藏且 ready 的 sidecar 状态轮询频率从 ${formatNumber(60000 / (baseline.derived.sidecarHiddenPollMs || 24000), 2)}/min 降到 ${formatNumber(60000 / optimized.derived.sidecarHiddenPollMs, 2)}/min，稳定后台轮询下降 ${formatDrop(60000 / (baseline.derived.sidecarHiddenPollMs || 24000), 60000 / optimized.derived.sidecarHiddenPollMs)}。`);
 	rows.push("");
 	rows.push("## 下一步优化方向");
 	rows.push("");
-	rows.push("- 把歌词/搜索结果/播客列表也接入同一个 virtual-list helper，尤其是长搜索结果和播客节目列表。");
+	rows.push("- 把歌词视图和更多播客集合页接入同一个 virtual-list helper，尤其是长歌词和播客节目二级页。");
 	rows.push("- 将 cover depth 的 3 个 scratch buffer 做成 per-worker/per-controller 复用池，进一步减少连续切歌时的 GC 压力。");
 	rows.push("- 给 AI depth 增加尺寸/来源维度的 LRU 和失败冷却，避免同封面不同 URL 参数重复估计。");
 	rows.push("- 加一个 CI 可跑的轻量 perf budget，只检查 DOM rows、depth 大数组次数、关键 bundle size，避免性能回退。");
@@ -806,7 +844,7 @@ function main() {
 	for (const version of versions) {
 		results.versions[version.key] = {
 			label: version.label,
-			ref: version.ref === "HEAD" ? run("git", ["rev-parse", "--short", "HEAD"], version.path, { capture: true }).stdout.trim() : version.ref,
+			ref: version.ref === "HEAD" ? "HEAD" : version.ref,
 			path: version.path,
 			derived: collectSourceDerivedMetrics(version),
 			dist: version.kind === "tauri" ? buildTauriWeb(version) : collectOriginalStaticStats(version),
