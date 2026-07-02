@@ -129,7 +129,7 @@ import type { FxState, LyricPalette } from "@mineradio/visual-engine";
 const SHOW_SPLASH = import.meta.env.VITE_SPLASH !== "0";
 const SIDECAR_STATUS_POLL_MS = 1500;
 const SIDECAR_STATUS_READY_MAX_POLL_MS = 12000;
-const SIDECAR_STATUS_HIDDEN_MAX_POLL_MS = 30000;
+const SIDECAR_STATUS_HIDDEN_MAX_POLL_MS = 60000;
 const SIDECAR_RECOVERED_NOTICE_MS = 2600;
 const PLAYBACK_QUALITY_STORE_KEY = "mineradio-playback-quality-v1";
 const HOME_LISTEN_STATS_STORE_KEY = "mineradio-listen-stats-v1";
@@ -807,6 +807,7 @@ export function nextSidecarStatusPollDelayMs(input: {
     SIDECAR_STATUS_POLL_MS * 2 ** readySteps,
   );
   if (!input.documentHidden) return foregroundDelay;
+  if (readySteps >= 3) return SIDECAR_STATUS_HIDDEN_MAX_POLL_MS;
   return Math.min(SIDECAR_STATUS_HIDDEN_MAX_POLL_MS, foregroundDelay * 2);
 }
 

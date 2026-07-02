@@ -796,7 +796,7 @@ test("nextSidecarStatusPollDelayMs backs off only during stable ready polling", 
 		status: sidecarStatus({ phase: "ready" }),
 		consecutiveReadyPolls: 4,
 		documentHidden: true,
-	})).toBe(24000);
+	})).toBe(60000);
 	expect(nextSidecarStatusPollDelayMs({
 		status: sidecarStatus({ phase: "recovering" }),
 		consecutiveReadyPolls: 4,
