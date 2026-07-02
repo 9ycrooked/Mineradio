@@ -1,6 +1,6 @@
 import { memo, useMemo, type ReactElement } from "react";
 import type { LyricPayload } from "@mineradio/shared";
-import { selectCurrentIndex } from "../../lyrics/select-current-index";
+import { getLyricIndex, selectLyricIndexAtPosition } from "../../lyrics/lyric-index";
 
 export interface LyricViewProps {
 	payload: LyricPayload | null;
@@ -8,17 +8,14 @@ export interface LyricViewProps {
 }
 
 function LyricViewImpl({ payload, positionMs }: LyricViewProps): ReactElement {
-	const sortedLines = useMemo(() => {
-		if (!payload || payload.lines.length === 0) return null;
-		return [...payload.lines].sort((a, b) => a.timeMs - b.timeMs);
-	}, [payload]);
+	const lyricIndex = useMemo(() => getLyricIndex(payload), [payload]);
 
 	const currentIndex = useMemo(
-		() => selectCurrentIndex(positionMs, payload),
-		[positionMs, payload],
+		() => selectLyricIndexAtPosition(lyricIndex, positionMs),
+		[positionMs, lyricIndex],
 	);
 
-	if (!sortedLines || sortedLines.length === 0) {
+	if (lyricIndex.lines.length === 0) {
 		return (
 			<div className="lyric-view" data-empty="true">
 				<p className="lyric-empty">no lyrics</p>
@@ -29,7 +26,7 @@ function LyricViewImpl({ payload, positionMs }: LyricViewProps): ReactElement {
 	return (
 		<div className="lyric-view">
 			<ul className="lyric-lines">
-				{sortedLines.map((line, index) => (
+				{lyricIndex.lines.map(({ line }, index) => (
 					<li
 						key={`${index}-${line.timeMs}`}
 						className={index === currentIndex ? "lyric-line lyric-current" : "lyric-line"}
